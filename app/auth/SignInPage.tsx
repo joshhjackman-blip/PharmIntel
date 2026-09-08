@@ -63,9 +63,9 @@ function SurveyMap() {
             className="si-map-tract"
             points={tract.points}
             fill={color}
-            fillOpacity={tract.selected ? 0.42 : 0.2}
+            fillOpacity={tract.selected ? 0.34 : 0.13}
             stroke={tract.selected ? '#EF9F27' : color}
-            strokeOpacity={tract.selected ? 1 : 0.55}
+            strokeOpacity={tract.selected ? 1 : 0.45}
             strokeWidth={tract.selected ? 2 : 0.8}
             style={{ animationDelay: `${180 + index * 45}ms` }}
           />

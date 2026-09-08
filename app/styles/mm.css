@@ -1540,7 +1540,9 @@
 .mm-night-alert[data-tone='info'] { background: rgba(239, 159, 39, 0.08); border: 1px solid rgba(239, 159, 39, 0.28); color: #fcd28a; }
 
 .mm-night-segment {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
   padding: 3px;
   border-radius: var(--mm-r-md);
   background: rgba(255, 255, 255, 0.05);
