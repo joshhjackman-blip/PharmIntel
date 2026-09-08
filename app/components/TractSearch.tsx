@@ -198,7 +198,7 @@ export default function TractSearch({ map, geojsonUrl, onTractSelect }: TractSea
               key={`${tract.abstract_l}-${i}`}
               onClick={() => handleSelect(tract)}
               className="mm-popover-row"
-              style={{ width: '100%', border: 'none', background: 'none', textAlign: 'left', justifyContent: 'flex-start', padding: '8px 12px' }}
+              style={{ width: '100%', borderWidth: '0 0 1px', background: 'none', textAlign: 'left', justifyContent: 'flex-start', padding: '8px 12px' }}
             >
               <span className="mm-chip mm-chip-amber mm-num" style={{ flexShrink: 0 }}>
                 {tract.abstract_l}
