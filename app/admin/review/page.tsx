@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
 import { ArrowLeft } from 'lucide-react'
 
-import AppLogo from '@/app/components/AppLogo'
+import AppHeader from '@/app/components/AppHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,29 +146,22 @@ export default function AdminReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-5">
-        <div className="flex items-center gap-3">
-          <AppLogo variant="light" width={120} />
-          <span className="text-gray-600">·</span>
-          <span className="text-sm text-gray-400">Admin Review</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
-          >
-            <ArrowLeft size={13} />
+    <div className="mm-app min-h-screen bg-gray-50">
+      <AppHeader
+        active="admin"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">Admin</span>
+            <span>Deed review</span>
+          </div>
+        }
+        actions={
+          <Link href="/admin" className="mm-btn mm-btn-ghost">
+            <ArrowLeft size={14} strokeWidth={2} />
             Back to admin
           </Link>
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
-          >
-            Map
-          </Link>
-        </div>
-      </header>
+        }
+      />
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-4">

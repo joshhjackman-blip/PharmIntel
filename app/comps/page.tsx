@@ -1,9 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import AppLogo from '@/app/components/AppLogo'
+import AppHeader from '@/app/components/AppHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -305,19 +304,16 @@ export default function Comps() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-5 shrink-0">
-        <div className="flex items-center gap-3">
-          <AppLogo width={130} variant="light" />
-          <span className="text-gray-600 text-sm">·</span>
-          <span className="text-sm font-medium text-gray-400">Comps</span>
-        </div>
-        <nav className="flex items-center gap-1">
-          <Link href="/" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">← Map</Link>
-          <Link href="/crm" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">CRM</Link>
-          <Link href="/methodology" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">Methodology</Link>
-        </nav>
-      </header>
+    <div className="mm-app h-screen flex flex-col bg-gray-50">
+      <AppHeader
+        active="comps"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">Comps</span>
+            <span>Value estimator</span>
+          </div>
+        }
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <div className="w-96 shrink-0 bg-white border-r border-gray-200 overflow-y-auto p-6">

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
-import { Users, CreditCard, TrendingUp, Phone, ArrowLeft } from 'lucide-react'
-import AppLogo from '@/app/components/AppLogo'
+import { Users, CreditCard, TrendingUp, Phone } from 'lucide-react'
+import AppHeader from '@/app/components/AppHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,21 +113,16 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-5">
-        <div className="flex items-center gap-3">
-          <AppLogo variant="light" width={120} />
-          <span className="text-gray-600">·</span>
-          <span className="text-sm text-gray-400">Admin</span>
-        </div>
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
-        >
-          <ArrowLeft size={13} />
-          Back to map
-        </Link>
-      </header>
+    <div className="mm-app min-h-screen bg-gray-50">
+      <AppHeader
+        active="admin"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">Admin</span>
+            <span>Users and usage</span>
+          </div>
+        }
+      />
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">

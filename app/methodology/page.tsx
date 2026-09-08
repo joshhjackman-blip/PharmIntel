@@ -1,9 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
-import AppLogo from '@/app/components/AppLogo'
+import AppHeader from '@/app/components/AppHeader'
 
 type SignalCard = {
   name: string
@@ -99,19 +98,16 @@ export default function MethodologyPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0)
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-5 shrink-0">
-        <div className="flex items-center gap-3">
-          <AppLogo width={130} variant="light" />
-          <span className="text-gray-600 text-sm">·</span>
-          <span className="text-sm font-medium text-gray-400">Methodology</span>
-        </div>
-        <nav className="flex items-center gap-1">
-          <Link href="/" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">← Map</Link>
-          <Link href="/crm" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">CRM</Link>
-          <Link href="/comps" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">Comps</Link>
-        </nav>
-      </header>
+    <div className="mm-app h-screen flex flex-col bg-gray-50">
+      <AppHeader
+        active="methodology"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">Docs</span>
+            <span>Methodology</span>
+          </div>
+        }
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-56 shrink-0 bg-white border-r border-gray-200 overflow-y-auto p-4">

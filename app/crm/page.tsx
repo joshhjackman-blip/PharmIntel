@@ -1,13 +1,12 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { COUNTIES } from '@/lib/counties'
 import type { County, CountyKey } from '@/lib/counties'
-import AppLogo from '@/app/components/AppLogo'
+import AppHeader from '@/app/components/AppHeader'
 import {
   Phone, Mail, Search,
-  MapPin, BarChart2, BookOpen, Clock,
+  MapPin, Clock,
   DollarSign, User, Building2,
   CheckCircle2, Circle, XCircle, Flame,
   TrendingUp, Save, FileText, Package, ThumbsDown,
@@ -728,25 +727,16 @@ export default function CRM() {
   const annual = editingDeal?.monthly_royalty ? Number(editingDeal.monthly_royalty) * 12 : 0
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 font-sans">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 shrink-0 shadow-sm">
-        <div className="flex items-center gap-3">
-          <AppLogo width={130} variant="light" />
-          <span className="text-gray-300 text-sm">·</span>
-          <span className="text-sm font-medium text-gray-400">CRM & Pipeline</span>
-        </div>
-        <nav className="flex items-center gap-1">
-          <Link href="/" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <MapPin size={13} />Map
-          </Link>
-          <Link href="/comps" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <BarChart2 size={13} />Comps
-          </Link>
-          <Link href="/methodology" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <BookOpen size={13} />Methodology
-          </Link>
-        </nav>
-      </header>
+    <div className="mm-app h-screen flex flex-col bg-gray-50">
+      <AppHeader
+        active="crm"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">CRM</span>
+            <span>Pipeline</span>
+          </div>
+        }
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[260px] shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col overflow-hidden">

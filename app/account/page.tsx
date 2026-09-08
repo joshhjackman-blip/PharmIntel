@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
-import { User, CreditCard, LogOut, MapPin, BarChart2 } from 'lucide-react'
-import AppLogo from '@/app/components/AppLogo'
+import { User, CreditCard, LogOut } from 'lucide-react'
+import AppHeader from '@/app/components/AppHeader'
 
 export const dynamic = 'force-dynamic'
 
@@ -170,25 +170,16 @@ export default function Account() {
         : 'bg-red-50 text-red-600 border-red-200'
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      <header className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-5 shrink-0">
-        <div className="flex items-center gap-3">
-          <AppLogo width={130} variant="light" />
-          <span className="text-gray-600 text-sm">·</span>
-          <span className="text-sm font-medium text-gray-400">Account</span>
-        </div>
-        <nav className="flex items-center gap-1">
-          <Link href="/" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <MapPin size={13} />Map
-          </Link>
-          <Link href="/crm" className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <BarChart2 size={13} />CRM
-          </Link>
-          <button onClick={handleSignOut} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors">
-            <LogOut size={13} />Sign out
-          </button>
-        </nav>
-      </header>
+    <div className="mm-app min-h-screen bg-gray-50">
+      <AppHeader
+        active="account"
+        context={
+          <div className="mm-context">
+            <span className="mm-context-label">Settings</span>
+            <span>Account</span>
+          </div>
+        }
+      />
 
       <div className="max-w-2xl mx-auto px-6 py-10">
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-5 shadow-sm">
