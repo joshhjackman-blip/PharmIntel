@@ -245,12 +245,12 @@
 }
 
 .mm-topbar-context { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mm-topbar-menu-btn { display: none; }
+.mm-topbar .mm-topbar-menu-btn { display: none; }
 .mm-topbar-account[data-active='true'] { color: var(--mm-ink); background: var(--mm-line-soft); }
 
 @media (max-width: 1100px) {
   .mm-topbar-nav { display: none; }
-  .mm-topbar-menu-btn { display: inline-flex; }
+  .mm-topbar .mm-topbar-menu-btn { display: inline-flex; }
 }
 
 @media (max-width: 760px) {
@@ -261,6 +261,7 @@
 }
 
 .mm-topbar[data-compact='true'] .mm-topbar-menu-btn { display: inline-flex; }
+.mm-topbar[data-compact='true'] .mm-topbar-nav { display: none; }
 
 .mm-nav {
   display: flex;
