@@ -2563,6 +2563,16 @@ export default function Map({
     mapFlyToRef.current = (center, zoom) => {
       const mapInstance = map.current
       if (!mapInstance) return
+      // Safety net: never fly outside the Texas/Permian window. Guards against
+      // a bad/empty/zero deep-link coordinate (e.g. lat=0&lon=0) sending the
+      // camera to Null Island / the ocean off West Africa.
+      const [lon, lat] = center
+      if (
+        !Number.isFinite(lon) || !Number.isFinite(lat) ||
+        lon < -108 || lon > -92 || lat < 24 || lat > 38
+      ) {
+        return
+      }
       // Cancel any in-flight tract fitBounds / prior fly so the county
       // camera isn't immediately overwritten.
       try {
@@ -2825,7 +2835,10 @@ export default function Map({
         (focusTarget as { lon?: unknown }).lon ??
         (focusTarget as { lng?: unknown }).lng,
     )
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    if (
+      Number.isFinite(lat) && Number.isFinite(lon) &&
+      lon >= -108 && lon <= -92 && lat >= 24 && lat <= 38
+    ) {
       map.current.easeTo({ center: [lon, lat], zoom: 14, ...easedMove(CAMERA_TRACT_MS) })
     }
   }, [focusTarget, mapLevel, selectedCounty, parcelsVersion])

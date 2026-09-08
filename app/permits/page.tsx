@@ -874,7 +874,15 @@ export default function PermitsPage() {
                         if (permit.abstract) qs.set('abstract', permit.abstract)
                         const lat = Number(permit.latitude)
                         const lon = Number(permit.longitude)
-                        if (Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0)) {
+                        // Only pass coordinates when they're a plausible Texas
+                        // location. A permit with one coord missing/zero
+                        // (Number(null) === 0) must NOT fly the map to Null
+                        // Island / off the African coast — require BOTH lat &
+                        // lon inside the Texas bounding box.
+                        const inTexas =
+                          Number.isFinite(lat) && Number.isFinite(lon) &&
+                          lat >= 25 && lat <= 37 && lon >= -107 && lon <= -93
+                        if (inTexas) {
                           qs.set('lat', String(lat))
                           qs.set('lon', String(lon))
                         }

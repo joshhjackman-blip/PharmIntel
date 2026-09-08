@@ -906,9 +906,13 @@ export default function Home() {
     const urlLat = Number(params.get('lat'))
     const urlLon = Number(params.get('lon'))
     const urlOwner = (params.get('owner') || '').trim()
-    const hasTractDeepLink =
-      Boolean(urlAbstractRaw) ||
-      (Number.isFinite(urlLat) && Number.isFinite(urlLon))
+    // Only trust a lat/lon deep-link when it's a plausible Texas coordinate.
+    // Guards against a bad/half-zero point (Number(null) === 0) flying the
+    // camera to Null Island / off the African coast.
+    const validPoint =
+      Number.isFinite(urlLat) && Number.isFinite(urlLon) &&
+      urlLat >= 25 && urlLat <= 37 && urlLon >= -107 && urlLon <= -93
+    const hasTractDeepLink = Boolean(urlAbstractRaw) || validPoint
     if (urlCounty && urlCounty in COUNTIES) {
       setSelectedCounty(urlCounty)
       setMapLevel('tract')
@@ -921,7 +925,7 @@ export default function Home() {
     if (urlAbstractRaw) {
       setPendingUrlAbstract(urlAbstractRaw.replace(/^A-\s*/i, '').trim())
     }
-    if (Number.isFinite(urlLat) && Number.isFinite(urlLon)) {
+    if (validPoint) {
       setPendingUrlPoint({ lat: urlLat, lon: urlLon })
     }
     if (urlOwner) setPendingUrlOwner(urlOwner)
