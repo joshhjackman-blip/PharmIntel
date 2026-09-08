@@ -7,7 +7,8 @@ import { COUNTIES } from '@/lib/counties'
 import type { County, CountyKey } from '@/lib/counties'
 import TractSearch from './TractSearch'
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+mapboxgl.accessToken = MAPBOX_TOKEN
 
 // Flatten a GeoJSON polygon/multipolygon geometry into a flat array of [lng, lat]
 // coordinate pairs so we can compute a rough bbox-based centroid without adding
@@ -951,6 +952,10 @@ export default function Map({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (map.current || !mapContainer.current) return
+    // Without a token mapbox-gl throws synchronously on construction, which
+    // takes the whole workspace down. Leave the container empty and let the
+    // placeholder below explain what is missing.
+    if (!MAPBOX_TOKEN) return
 
     const mapInstance = new mapboxgl.Map({
       container: mapContainer.current,
@@ -1043,6 +1048,28 @@ export default function Map({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
+      {!MAPBOX_TOKEN && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background:
+              'linear-gradient(rgba(17,24,39,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(17,24,39,0.04) 1px, transparent 1px), #F4F5F7',
+            backgroundSize: '40px 40px, 40px 40px, auto',
+          }}
+        >
+          <div className="mm-card mm-card-pad" style={{ maxWidth: 360, textAlign: 'center' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: '#111827' }}>Map tiles unavailable</div>
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 6, lineHeight: 1.5 }}>
+              Set <code style={{ fontFamily: 'var(--mm-font-mono)', fontSize: 11 }}>NEXT_PUBLIC_MAPBOX_TOKEN</code> to
+              render county and tract layers. Owner data and filters still work.
+            </div>
+          </div>
+        </div>
+      )}
       {mapReady && (
         <TractSearch
           map={map.current}
