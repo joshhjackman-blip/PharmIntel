@@ -1,102 +1,127 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { ArrowRight, Eye, EyeOff } from 'lucide-react'
+
 import { supabase } from '@/lib/supabase'
+import AppLogo from '@/app/components/AppLogo'
 import './signin.css'
 
-// ── Oil Field SVG ─────────────────────────────────────────────────────────────
+const TIER_COLORS = {
+  hot: '#F44336',
+  motivated: '#FF9800',
+  prospect: '#FFC107',
+  low: '#4CAF50',
+} as const
 
-function OilFieldSVG() {
-  const parcels: [number, number, number, number][] = [
-    [80,60,220,180],[300,60,460,220],[500,80,680,240],
-    [60,200,260,360],[280,220,500,400],[520,250,720,420],
-    [80,380,300,540],[320,420,560,580],[580,440,760,600],
-    [100,560,320,680],[340,580,600,700],
-  ]
-  const wells: [number, number][] = [
-    [160,60],[320,140],[480,80],[640,160],
-    [130,300],[400,280],[600,320],[200,480],[500,500],[700,440],
-  ]
-  const dots: [number, number, number, number][] = [
-    [200,130,8,0.9],[420,200,6,0.75],[560,150,7,0.85],
-    [150,320,5,0.6],[380,340,8,0.9],[650,380,6,0.7],
-    [240,500,7,0.8],[520,520,5,0.55],[720,480,6,0.65],
-    [340,620,8,0.9],[600,640,5,0.6],
-  ]
+type Tier = keyof typeof TIER_COLORS
+
+type Tract = {
+  points: string
+  tier: Tier
+  selected?: boolean
+}
+
+// Stylized survey grid: irregular abstracts colored by propensity tier, the
+// same palette the live map uses.
+const TRACTS: Tract[] = [
+  { points: '20,20 150,16 158,110 26,118', tier: 'low' },
+  { points: '150,16 300,22 296,104 158,110', tier: 'prospect' },
+  { points: '300,22 430,18 438,96 296,104', tier: 'motivated' },
+  { points: '430,18 580,26 574,108 438,96', tier: 'low' },
+  { points: '26,118 158,110 166,214 32,222', tier: 'prospect' },
+  { points: '158,110 296,104 302,206 166,214', tier: 'hot', selected: true },
+  { points: '296,104 438,96 444,200 302,206', tier: 'motivated' },
+  { points: '438,96 574,108 568,212 444,200', tier: 'prospect' },
+  { points: '32,222 166,214 160,318 24,326', tier: 'low' },
+  { points: '166,214 302,206 310,312 160,318', tier: 'motivated' },
+  { points: '302,206 444,200 450,306 310,312', tier: 'hot' },
+  { points: '444,200 568,212 578,316 450,306', tier: 'low' },
+]
+
+const WELLS: Array<[number, number]> = [
+  [96, 70], [230, 62], [372, 58], [500, 66],
+  [104, 168], [226, 160], [372, 154], [506, 156],
+  [92, 270], [238, 262], [376, 256], [512, 262],
+]
+
+function SurveyMap() {
   return (
-    <svg viewBox="0 0 800 700" fill="none" xmlns="http://www.w3.org/2000/svg" color="#EF9F27">
-      {[0,1,2,3,4,5].map(i => (
-        <line key={`v${i}`} x1={i*160} y1="0" x2={i*160} y2="700"
-          stroke="currentColor" strokeWidth="0.4" strokeDasharray="3 9" opacity="0.6" />
-      ))}
-      {[0,1,2,3,4].map(i => (
-        <line key={`h${i}`} x1="0" y1={i*160+30} x2="800" y2={i*160+30}
-          stroke="currentColor" strokeWidth="0.4" strokeDasharray="3 9" opacity="0.6" />
-      ))}
-      {parcels.map(([x1,y1,x2,y2],i) => (
-        <rect key={`p${i}`} x={x1} y={y1} width={x2-x1} height={y2-y1}
-          stroke="currentColor" strokeWidth="0.6" fill="none" opacity="0.25" />
-      ))}
-      {wells.map(([x,y],i) => (
-        <g key={`w${i}`}>
-          <line x1={x} y1={y} x2={x} y2={y+80} stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
-          <polygon points={`${x},${y} ${x-6},${y+14} ${x+6},${y+14}`} fill="currentColor" opacity="0.6" />
-          <line x1={x} y1={y+80} x2={x + (i%2===0?90:-90)} y2={y+80}
-            stroke="currentColor" strokeWidth="0.8" strokeDasharray="4 4" opacity="0.35" />
+    <svg viewBox="0 0 600 340" role="img" aria-label="Survey abstracts colored by acquisition opportunity">
+      <defs>
+        <pattern id="si-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+          <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.6" />
+        </pattern>
+      </defs>
+      <rect width="600" height="340" fill="url(#si-grid)" />
+      {TRACTS.map((tract, index) => {
+        const color = TIER_COLORS[tract.tier]
+        return (
+          <polygon
+            key={tract.points}
+            className="si-map-tract"
+            points={tract.points}
+            fill={color}
+            fillOpacity={tract.selected ? 0.42 : 0.2}
+            stroke={tract.selected ? '#EF9F27' : color}
+            strokeOpacity={tract.selected ? 1 : 0.55}
+            strokeWidth={tract.selected ? 2 : 0.8}
+            style={{ animationDelay: `${180 + index * 45}ms` }}
+          />
+        )
+      })}
+      {/* Horizontal laterals */}
+      <path d="M 182 128 L 288 196" stroke="rgba(240,236,228,0.55)" strokeWidth="1.2" strokeDasharray="4 3" fill="none" />
+      <path d="M 318 224 L 436 292" stroke="rgba(240,236,228,0.35)" strokeWidth="1" strokeDasharray="4 3" fill="none" />
+      {WELLS.map(([x, y], index) => (
+        <g key={`${x}-${y}`} className="si-map-pin" style={{ animationDelay: `${700 + index * 30}ms` }}>
+          <circle cx={x} cy={y} r="2.6" fill="#f0ece4" />
+          <circle cx={x} cy={y} r="5.5" fill="none" stroke="rgba(240,236,228,0.35)" strokeWidth="0.8" />
         </g>
       ))}
-      {dots.map(([x,y,r,op],i) => (
-        <circle key={`d${i}`} cx={x} cy={y} r={r} fill="currentColor" opacity={op} />
-      ))}
-      <path d="M160,140 Q280,200 400,280 Q520,360 640,380"
-        stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.2" strokeDasharray="8 4"/>
-      <path d="M480,80 Q540,200 600,320 Q660,440 700,480"
-        stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.2" strokeDasharray="8 4"/>
+      {/* Selected tract marker */}
+      <g className="si-map-pin">
+        <line x1="230" y1="132" x2="230" y2="160" stroke="#EF9F27" strokeWidth="1.2" />
+        <circle cx="230" cy="160" r="3" fill="#EF9F27" />
+        <circle cx="230" cy="160" r="8" fill="none" stroke="#EF9F27" strokeOpacity="0.4" strokeWidth="1" />
+      </g>
     </svg>
   )
 }
 
-// ── Error / Info Messages ─────────────────────────────────────────────────────
-
-function ErrorMessage({ message }: { message: string }) {
+function AlertIcon() {
   return (
-    <div className="si-form-error">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      {message}
-    </div>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
   )
 }
 
-function InfoMessage({ message }: { message: string }) {
+function InfoIcon() {
   return (
-    <div className="si-form-info">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="16" x2="12" y2="12"/>
-        <line x1="12" y1="8" x2="12.01" y2="8"/>
-      </svg>
-      {message}
-    </div>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
   )
 }
 
-// ── Sign In Form ──────────────────────────────────────────────────────────────
+type Mode = 'login' | 'signup'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<Mode>('login')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [inviteOwnerId, setInviteOwnerId] = useState<string | null>(null)
   const [isInvite, setIsInvite] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -107,11 +132,15 @@ function SignInForm() {
       setInviteOwnerId(inviteOwnerParam)
       setIsInvite(true)
       setMode('signup')
-      setMessage(
-        'You were invited to join a team account. Sign in or create your account to accept.'
-      )
+      setMessage('You were invited to join a team account. Sign in or create your account to accept.')
     }
   }, [])
+
+  const switchMode = (next: Mode) => {
+    setMode(next)
+    setError(null)
+    setMessage(null)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -146,9 +175,7 @@ function SignInForm() {
         body: JSON.stringify({ ownerId: inviteOwnerId }),
       })
       if (!acceptRes.ok) {
-        const acceptData = (await acceptRes.json().catch(() => ({}))) as {
-          error?: string
-        }
+        const acceptData = (await acceptRes.json().catch(() => ({}))) as { error?: string }
         setError(acceptData.error ?? 'Failed to accept invite')
         setLoading(false)
         return
@@ -168,111 +195,105 @@ function SignInForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <div className="si-form-title fade-up fade-up-1">
-        {isLogin ? 'Sign in' : 'Create account'}
+      <div className="mm-night-segment" data-index={isLogin ? '0' : '1'} role="tablist" aria-label="Authentication mode">
+        <span className="mm-night-segment-thumb" aria-hidden="true" />
+        <button type="button" role="tab" aria-selected={isLogin} data-active={isLogin} onClick={() => switchMode('login')}>
+          Sign in
+        </button>
+        <button type="button" role="tab" aria-selected={!isLogin} data-active={!isLogin} onClick={() => switchMode('signup')}>
+          Create account
+        </button>
       </div>
-      <div className="si-form-subtitle fade-up fade-up-2">
+
+      <h2 className="si-form-title">{isLogin ? 'Welcome back' : 'Request access'}</h2>
+      <p className="si-form-sub">
         {isLogin
-          ? 'Access your Mineral Map workspace.'
-          : 'Request access to Mineral Map.'}
-      </div>
+          ? 'Sign in to your Mineral Map workspace.'
+          : 'Create your account to get started with Mineral Map.'}
+      </p>
 
       {isInvite && (
-        <InfoMessage
-          message={`Team invite detected for ${email}. Complete sign-in or sign-up to accept.`}
-        />
+        <div className="mm-night-alert" data-tone="info" style={{ marginBottom: 16 }}>
+          <InfoIcon />
+          <span>Team invite detected for {email}. Complete sign-in or sign-up to accept.</span>
+        </div>
+      )}
+      {error && (
+        <div className="mm-night-alert" data-tone="error" role="alert" style={{ marginBottom: 16 }}>
+          <AlertIcon />
+          <span>{error}</span>
+        </div>
+      )}
+      {message && !isInvite && (
+        <div className="mm-night-alert" data-tone="info" style={{ marginBottom: 16 }}>
+          <InfoIcon />
+          <span>{message}</span>
+        </div>
       )}
 
-      {error && <ErrorMessage message={error} />}
-      {message && !isInvite && <InfoMessage message={message} />}
-
-      <div className="si-form-group fade-up fade-up-2">
-        <label className="si-form-label" htmlFor="email">Email</label>
+      <div className="si-field">
+        <label className="mm-night-label" htmlFor="email">Work email</label>
         <input
           id="email"
           type="email"
-          className="si-form-input"
+          className="mm-night-input"
           placeholder="you@company.com"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           autoFocus
         />
       </div>
 
-      <div className="si-form-group fade-up fade-up-3">
-        <label className="si-form-label" htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          className="si-form-input"
-          placeholder="••••••••"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          autoComplete={isLogin ? 'current-password' : 'new-password'}
-        />
+      <div className="si-field">
+        <label className="mm-night-label" htmlFor="password">
+          <span>Password</span>
+        </label>
+        <div className="si-password">
+          <input
+            id="password"
+            type={showPassword ? 'text' : 'password'}
+            className="mm-night-input"
+            placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={isLogin ? 'current-password' : 'new-password'}
+          />
+          <button
+            type="button"
+            className="si-eye"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff size={16} strokeWidth={2} /> : <Eye size={16} strokeWidth={2} />}
+          </button>
+        </div>
       </div>
 
-      <div className="si-form-row fade-up fade-up-3">
-        <button
-          type="button"
-          className="si-form-mode-toggle"
-          onClick={() => {
-            setMode(isLogin ? 'signup' : 'login')
-            setError(null)
-            setMessage(null)
-          }}
-        >
-          {isLogin ? 'Need an account? Sign up' : 'Have an account? Sign in'}
-        </button>
-      </div>
-
-      <button
-        type="submit"
-        className="si-btn-submit fade-up fade-up-4"
-        disabled={loading}
-      >
+      <button type="submit" className="mm-night-btn mm-night-btn-brand mm-night-btn-lg mm-night-btn-block si-submit" disabled={loading}>
         {loading ? (
           <>
-            <span className="si-spinner" /> {isLogin ? 'Signing in…' : 'Creating account…'}
+            <span className="mm-spinner" style={{ borderColor: 'rgba(0,0,0,0.15)', borderTopColor: 'currentColor' }} />
+            {isLogin ? 'Signing in' : 'Creating account'}
           </>
         ) : (
-          isLogin ? 'Sign in →' : 'Create account →'
+          <>
+            {isLogin ? 'Sign in' : 'Create account'}
+            <ArrowRight size={16} strokeWidth={2.25} />
+          </>
         )}
       </button>
 
-      <div className="si-form-divider fade-up fade-up-5" />
-
-      <div className="si-form-request fade-up fade-up-5">
+      <div className="si-switch">
         {isLogin ? (
           <>
             New to Mineral Map?{' '}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault()
-                setMode('signup')
-                setError(null)
-                setMessage(null)
-              }}
-            >
-              Request access →
-            </a>
+            <button type="button" onClick={() => switchMode('signup')}>Request access</button>
           </>
         ) : (
           <>
             Already have an account?{' '}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault()
-                setMode('login')
-                setError(null)
-                setMessage(null)
-              }}
-            >
-              Sign in →
-            </a>
+            <button type="button" onClick={() => switchMode('login')}>Sign in</button>
           </>
         )}
       </div>
@@ -280,47 +301,116 @@ function SignInForm() {
   )
 }
 
-// ── Sign In Page ──────────────────────────────────────────────────────────────
-
 export default function SignInPage() {
-  return (
-    <div className="si-root">
-      <div className="si-page">
-        {/* Left branding panel */}
-        <div className="si-left-panel">
-          <div className="si-left-bg">
-            <OilFieldSVG />
-            <div className="si-left-glow" />
-            <div className="si-left-glow2" />
-          </div>
-          <div className="si-left-logo">
-            <a href="/landing">
-              <img src="/mineral-map-logo-light.svg" alt="Mineral Map" />
-            </a>
-          </div>
-          <div className="si-left-content">
-            <div className="si-left-eyebrow">Mineral Acquisition Intelligence</div>
-            <h1 className="si-left-headline">
-              Find the right owners<br />
-              <em>before anyone else.</em>
-            </h1>
-            <p className="si-left-sub">
-              County ownership data, well context, and motivation scoring —
-              combined into one acquisition platform.
-            </p>
-          </div>
-          <div className="si-left-footer">
-            <a href="/landing">← Back to landing</a>
-            <a href="https://getmineralmap.com/pricing">Pricing</a>
-          </div>
-        </div>
+  const legend = useMemo(
+    () => [
+      { label: 'Hot', color: TIER_COLORS.hot },
+      { label: 'Motivated', color: TIER_COLORS.motivated },
+      { label: 'Prospect', color: TIER_COLORS.prospect },
+      { label: 'Low', color: TIER_COLORS.low },
+    ],
+    []
+  )
 
-        {/* Right form panel */}
-        <div className="si-right-panel">
+  return (
+    <div className="mm-night">
+      <div className="mm-night-grid" aria-hidden="true" />
+      <div
+        className="mm-night-glow"
+        aria-hidden="true"
+        style={{ bottom: '-10%', left: '10%', width: 520, height: 520, background: 'rgba(239,159,39,0.14)' }}
+      />
+
+      <div className="si-page">
+        <aside className="si-brand">
+          <div className="si-brand-top">
+            <Link href="/landing" aria-label="Mineral Map" style={{ display: 'flex' }}>
+              <AppLogo width={140} variant="light" />
+            </Link>
+            <span className="mm-night-kicker" style={{ fontSize: 10.5 }}>Mineral acquisition intelligence</span>
+          </div>
+
+          <div className="si-brand-body">
+            <div className="mm-enter">
+              <h1 className="mm-night-display">
+                Find the right owners
+                <br />
+                <em>before anyone else.</em>
+              </h1>
+              <p className="mm-night-lede si-brand-sub">
+                County ownership data, well context, and motivation scoring combined into one
+                acquisition platform.
+              </p>
+            </div>
+
+            <div className="si-map">
+              <div className="si-map-head">
+                <span>
+                  <strong>Gonzales County, TX</strong>
+                </span>
+                <div className="si-map-legend" aria-hidden="true">
+                  {legend.map((item) => (
+                    <span key={item.label}>
+                      <i style={{ background: item.color }} />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <SurveyMap />
+              <div className="si-map-callout">
+                <div className="si-map-callout-row">
+                  <div>
+                    <div className="si-map-callout-name">Abstract A-160</div>
+                    <div className="si-map-callout-sub">EOG Resources</div>
+                  </div>
+                  <span className="si-map-callout-score">9/10</span>
+                </div>
+                <div className="si-map-callout-tags">
+                  <span style={{ color: '#F44336', borderColor: 'rgba(244,67,54,0.4)', background: 'rgba(244,67,54,0.12)' }}>HOT</span>
+                  <span style={{ color: '#EF9F27', borderColor: 'rgba(239,159,39,0.4)', background: 'rgba(239,159,39,0.12)' }}>OOS</span>
+                  <span style={{ color: '#b0a89a', borderColor: 'rgba(255,255,255,0.14)' }}>IND</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="si-stats mm-stagger">
+              <div className="si-stat">
+                <strong>73,430</strong>
+                <span>Mineral owners scored</span>
+              </div>
+              <div className="si-stat">
+                <strong>3,950</strong>
+                <span>Hot leads (8 to 10)</span>
+              </div>
+              <div className="si-stat">
+                <strong>207</strong>
+                <span>Survey abstracts mapped</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="si-brand-foot">
+            <Link href="/landing">Overview</Link>
+            <Link href="/pricing">Pricing</Link>
+            <a href="mailto:josh@brentwoodenterprisesllc.com">Contact</a>
+          </div>
+        </aside>
+
+        <main className="si-form-panel">
           <div className="si-form-card">
+            <div className="si-mobile-logo">
+              <Link href="/landing" aria-label="Mineral Map" style={{ display: 'inline-flex' }}>
+                <AppLogo width={124} variant="light" />
+              </Link>
+            </div>
             <SignInForm />
           </div>
-        </div>
+          <div className="si-form-foot">
+            <Link href="/landing">Overview</Link>
+            <Link href="/pricing">Pricing</Link>
+          </div>
+        </main>
       </div>
     </div>
   )

@@ -1,16 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { ArrowRight, Check, Minus, Users } from 'lucide-react'
+
 import AppLogo from '@/app/components/AppLogo'
+import './pricing.css'
+
+type TierKey = 'solo' | 'team' | 'enterprise'
 
 type Tier = {
+  key: TierKey
   name: string
   price: string
   period: string
   description: string
   seats: string
   features: string[]
+  inheritsFrom?: string
   cta: string
   priceId: string | null | undefined
   highlighted: boolean
@@ -18,15 +25,16 @@ type Tier = {
 
 const tiers: Tier[] = [
   {
+    key: 'solo',
     name: 'Solo',
     price: '$299',
     period: '/mo',
-    description: 'For individual landmen and acquisition professionals',
+    description: 'For individual landmen and acquisition professionals.',
     seats: '1 seat',
     features: [
-      '207 survey abstracts — Gonzales County',
+      '207 survey abstracts in Gonzales County',
       '73,000+ scored mineral owners',
-      'Propensity scoring — 12 signals',
+      'Propensity scoring across 12 signals',
       'Built-in CRM and pipeline',
       '200 skip traces per month',
       'CSV export',
@@ -37,16 +45,17 @@ const tiers: Tier[] = [
     highlighted: false,
   },
   {
+    key: 'team',
     name: 'Team',
     price: '$499',
     period: '/mo',
-    description: 'For acquisition teams and small funds',
+    description: 'For acquisition teams and small funds that work one pipeline together.',
     seats: 'Up to 3 seats',
+    inheritsFrom: 'Everything in Solo',
     features: [
-      'Everything in Solo',
       'Up to 3 user logins',
       'Shared CRM pipeline',
-      'Shared skip trace pool — 600/mo',
+      'Shared skip trace pool of 600 per month',
       'Priority access to new counties',
     ],
     cta: 'Start free trial',
@@ -54,39 +63,104 @@ const tiers: Tier[] = [
     highlighted: true,
   },
   {
+    key: 'enterprise',
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    description: 'For larger operations and multi-county coverage',
+    description: 'For larger operations and multi-county coverage.',
     seats: '5+ seats',
+    inheritsFrom: 'Everything in Team',
     features: [
-      'Everything in Team',
       'Unlimited seats',
       'Multi-county access',
       'Dedicated onboarding',
       'Custom data requests',
       'Priority support',
     ],
-    cta: 'Contact us',
+    cta: 'Contact sales',
     priceId: null,
     highlighted: false,
   },
 ]
 
-export default function Pricing() {
-  const [loadingTier, setLoadingTier] = useState<string | null>(null)
+type CompareCell = boolean | string
 
-  const handleCheckout = async (priceId?: string | null, tierName?: string) => {
-    if (!priceId) {
-      alert('Missing Stripe price configuration for this tier.')
+type CompareRow = {
+  label: string
+  values: [CompareCell, CompareCell, CompareCell]
+}
+
+type CompareGroup = {
+  group: string
+  rows: CompareRow[]
+}
+
+const COMPARE: CompareGroup[] = [
+  {
+    group: 'Data',
+    rows: [
+      { label: 'Survey abstracts', values: ['207 (Gonzales County)', '207 (Gonzales County)', 'Multi-county'] },
+      { label: 'Scored mineral owners', values: ['73,000+', '73,000+', '73,000+'] },
+      { label: 'Propensity scoring', values: ['12 signals', '12 signals', '12 signals'] },
+      { label: 'New county access', values: [false, 'Priority', 'Included'] },
+      { label: 'Custom data requests', values: [false, false, true] },
+    ],
+  },
+  {
+    group: 'Workflow',
+    rows: [
+      { label: 'CRM and pipeline', values: ['Built in', 'Shared', 'Shared'] },
+      { label: 'Skip traces per month', values: ['200', '600 shared pool', 'Custom'] },
+      { label: 'CSV export', values: [true, true, true] },
+      { label: 'Comp calculator', values: [true, true, true] },
+    ],
+  },
+  {
+    group: 'Team',
+    rows: [
+      { label: 'Seats', values: ['1', 'Up to 3', 'Unlimited'] },
+      { label: 'Dedicated onboarding', values: [false, false, true] },
+      { label: 'Priority support', values: [false, false, true] },
+    ],
+  },
+]
+
+const CONTACT_EMAIL = 'josh@brentwoodenterprisesllc.com'
+
+function CompareValue({ value }: { value: CompareCell }): ReactNode {
+  if (value === true) {
+    return (
+      <span className="pr-yes" aria-label="Included">
+        <Check size={13} strokeWidth={2.75} />
+      </span>
+    )
+  }
+  if (value === false) {
+    return (
+      <span className="pr-no" aria-label="Not included">
+        <Minus size={13} strokeWidth={2.5} />
+      </span>
+    )
+  }
+  return <span>{value}</span>
+}
+
+export default function Pricing() {
+  const [loadingTier, setLoadingTier] = useState<TierKey | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleCheckout = async (tier: Tier) => {
+    setError(null)
+    if (!tier.priceId) {
+      setError('Checkout is not configured for this plan yet. Contact us and we will set you up directly.')
       return
     }
-    setLoadingTier(tierName ?? 'checkout')
+    setLoadingTier(tier.key)
     try {
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ priceId: tier.priceId }),
       })
       const data = (await res.json()) as { url?: string; error?: string }
       if (data.url) {
@@ -98,135 +172,224 @@ export default function Pricing() {
         return
       }
       setLoadingTier(null)
-      alert(data.error ?? 'Unable to start checkout')
+      setError(data.error ?? 'Unable to start checkout. Please try again.')
     } catch {
       setLoadingTier(null)
-      alert('Unable to start checkout')
+      setError('Unable to start checkout. Please try again.')
     }
   }
 
   return (
-    <>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ background: '#0b0f1c', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-        <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 52px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <Link href="/landing" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-            <AppLogo width={165} variant="light" />
+    <div className="mm-night">
+      <div className="mm-night-grid" aria-hidden="true" />
+      <div
+        className="mm-night-glow"
+        aria-hidden="true"
+        style={{ top: -120, left: '50%', transform: 'translateX(-50%)', width: 720, height: 360, background: 'rgba(239,159,39,0.16)' }}
+      />
+
+      <nav className="mm-night-nav" aria-label="Site">
+        <Link href="/landing" style={{ display: 'flex', alignItems: 'center' }} aria-label="Mineral Map">
+          <AppLogo width={150} variant="light" />
+        </Link>
+        <div className="mm-night-nav-links">
+          <Link href="/landing" className="mm-night-link">Overview</Link>
+          <Link href="/pricing" className="mm-night-link" data-active="true">Pricing</Link>
+          <Link href="/auth" className="mm-night-btn mm-night-btn-ghost mm-night-btn-sm" style={{ marginLeft: 8 }}>
+            Sign in
           </Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Link href="/landing" style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '7px 16px', textDecoration: 'none', fontWeight: 500 }}>← Back to landing</Link>
-            <Link href="/auth" style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, padding: '7px 16px', textDecoration: 'none', fontWeight: 500 }}>Sign in</Link>
-          </div>
-        </nav>
-
-        <div style={{ textAlign: 'center', padding: '64px 52px 48px' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(239,159,39,0.22)', borderRadius: 30, padding: '5px 14px', marginBottom: 24 }}>
-            <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#EF9F27' }} />
-            <span style={{ fontSize: 12, color: 'rgba(239,159,39,0.85)', fontWeight: 500, letterSpacing: '0.04em' }}>Simple pricing · No contracts</span>
-          </div>
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 44, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.02em', marginBottom: 14 }}>Choose the plan that fits your team.</div>
-          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.35)', maxWidth: 560, margin: '0 auto', lineHeight: 1.65 }}>Start with Solo, upgrade to Team when you need shared workflow, or talk to us for Enterprise coverage.</p>
         </div>
+      </nav>
 
-        {/* Pricing refresh marker: updated Solo/Team display prices */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 20, maxWidth: 1120, margin: '0 auto', padding: '20px 52px 64px' }}>
-          {tiers.map((tier) => {
-            const isEnterprise = tier.name === 'Enterprise'
-            const isLoading = loadingTier === tier.name
-            return (
-              <div
-                key={tier.name}
-                style={{
-                  background: tier.highlighted ? 'rgba(239,159,39,0.08)' : 'rgba(255,255,255,0.02)',
-                  border: tier.highlighted ? '1px solid rgba(239,159,39,0.55)' : '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 16,
-                  padding: '30px 28px',
-                  boxShadow: tier.highlighted ? '0 0 0 1px rgba(239,159,39,0.18) inset' : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                    {tier.name}
-                  </div>
-                  <div style={{ fontSize: 11, color: tier.highlighted ? 'rgba(239,159,39,0.95)' : 'rgba(255,255,255,0.45)' }}>
-                    {tier.seats}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
-                  <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 44, color: '#fff', lineHeight: 1 }}>
-                    {tier.price}
-                  </span>
-                  {tier.period && (
-                    <span style={{ fontSize: 16, color: 'rgba(255,255,255,0.35)' }}>{tier.period}</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginBottom: 20, minHeight: 38 }}>
-                  {tier.description}
-                </div>
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 20 }} />
-                <ul style={{ listStyle: 'none', marginBottom: 28, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {tier.features.map((feature) => (
-                    <li key={`${tier.name}-${feature}`} style={{ fontSize: 13, color: 'rgba(255,255,255,0.66)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'rgba(239,159,39,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF9F27' }} />
-                      </div>
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
+      <header className="pr-hero">
+        <div className="mm-enter">
+          <span className="mm-night-kicker">Pricing</span>
+          <h1 className="mm-night-display">
+            Simple pricing.
+            <br />
+            <em>No contracts.</em>
+          </h1>
+          <p className="mm-night-lede" style={{ maxWidth: 520 }}>
+            Start with Solo, move to Team when you need a shared pipeline, or talk to us about
+            Enterprise coverage. Solo and Team start with a free trial, and there are no contracts.
+          </p>
+        </div>
+        <div className="pr-hero-aside mm-enter" style={{ animationDelay: '120ms' }}>
+          <div className="pr-hero-stat">
+            <strong>73,000+</strong>
+            <span>Scored mineral owners</span>
+          </div>
+          <div className="pr-hero-stat">
+            <strong>207</strong>
+            <span>Survey abstracts mapped</span>
+          </div>
+          <div className="pr-hero-stat">
+            <strong>12</strong>
+            <span>Propensity signals per owner</span>
+          </div>
+        </div>
+      </header>
+
+      {error && (
+        <div className="pr-error">
+          <div className="mm-night-alert" data-tone="error" role="alert" style={{ marginBottom: 16 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      <section className="pr-plans" aria-label="Plans">
+        {tiers.map((tier) => {
+          const isEnterprise = tier.key === 'enterprise'
+          const isLoading = loadingTier === tier.key
+          return (
+            <article key={tier.key} className="mm-night-card pr-plan" data-featured={tier.highlighted}>
+              {tier.highlighted && <div className="pr-plan-ribbon">Most popular</div>}
+              <div className="pr-plan-head">
+                <span className="pr-plan-name">{tier.name}</span>
+                <span className="pr-plan-seats">
+                  <Users size={12} strokeWidth={2.25} />
+                  {tier.seats}
+                </span>
+              </div>
+              <div className="pr-plan-price">
+                <strong>{tier.price}</strong>
+                {tier.period && <span>{tier.period}</span>}
+              </div>
+              <p className="pr-plan-desc">{tier.description}</p>
+
+              <div className="pr-plan-cta">
                 {isEnterprise ? (
                   <a
-                    href="mailto:josh@brentwoodenterprisesllc.com"
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: 12,
-                      background: 'transparent',
-                      borderRadius: 9,
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: '#EF9F27',
-                      textAlign: 'center',
-                      textDecoration: 'none',
-                      letterSpacing: '0.01em',
-                      border: '1px solid rgba(239,159,39,0.45)',
-                    }}
+                    href={`mailto:${CONTACT_EMAIL}?subject=Mineral%20Map%20Enterprise`}
+                    className="mm-night-btn mm-night-btn-outline-amber mm-night-btn-block"
                   >
                     {tier.cta}
+                    <ArrowRight size={15} strokeWidth={2.25} />
                   </a>
                 ) : (
                   <button
-                    onClick={() => {
-                      void handleCheckout(tier.priceId, tier.name)
-                    }}
+                    type="button"
+                    className={`mm-night-btn mm-night-btn-block ${tier.highlighted ? 'mm-night-btn-brand' : 'mm-night-btn-white'}`}
                     disabled={isLoading}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: 12,
-                      background: '#EF9F27',
-                      borderRadius: 9,
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: '#3a1e00',
-                      textAlign: 'center',
-                      textDecoration: 'none',
-                      letterSpacing: '0.01em',
-                      border: 'none',
-                      cursor: isLoading ? 'not-allowed' : 'pointer',
-                      opacity: isLoading ? 0.7 : 1,
+                    onClick={() => {
+                      void handleCheckout(tier)
                     }}
                   >
-                    {isLoading ? 'Loading...' : tier.cta}
+                    {isLoading ? (
+                      <>
+                        <span className="mm-spinner" style={{ borderColor: 'rgba(0,0,0,0.15)', borderTopColor: 'currentColor' }} />
+                        Redirecting to checkout
+                      </>
+                    ) : (
+                      <>
+                        {tier.cta}
+                        <ArrowRight size={15} strokeWidth={2.25} />
+                      </>
+                    )}
                   </button>
                 )}
               </div>
-            )
-          })}
+
+              <div className="pr-plan-divider" />
+              <ul className="pr-plan-features">
+                {tier.inheritsFrom && (
+                  <li data-inherit="true">
+                    <Check size={14} strokeWidth={2.5} />
+                    {tier.inheritsFrom}
+                  </li>
+                )}
+                {tier.features.map((feature) => (
+                  <li key={`${tier.key}-${feature}`}>
+                    <Check size={14} strokeWidth={2.5} />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          )
+        })}
+      </section>
+
+      <section className="pr-section" aria-labelledby="compare-heading">
+        <div className="pr-section-head">
+          <div>
+            <span className="mm-night-kicker">Compare</span>
+            <h2 id="compare-heading" className="mm-night-display">What each plan includes</h2>
+          </div>
+          <p>The same scored owner data on every plan. Team and Enterprise add shared workflow, more skip traces, and broader coverage.</p>
         </div>
 
-        <div style={{ textAlign: 'center', paddingBottom: 48, fontSize: 12, color: 'rgba(255,255,255,0.15)' }}>mineralmap.io · Eagle Ford Basin</div>
-      </div>
+        <div className="pr-compare mm-enter" style={{ animationDelay: '80ms' }}>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                {tiers.map((tier) => (
+                  <th key={tier.key} scope="col" data-featured={tier.highlighted}>
+                    {tier.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE.map((group) => (
+                <FragmentGroup key={group.group} group={group} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="pr-contact" aria-label="Contact">
+        <div className="pr-contact-card mm-enter" style={{ animationDelay: '120ms' }}>
+          <div>
+            <h3>Questions about coverage or seats?</h3>
+            <p>
+              Tell us which counties you work and how many people need access. We will recommend a plan
+              or put together a custom quote.
+            </p>
+          </div>
+          <a href={`mailto:${CONTACT_EMAIL}`} className="mm-night-btn mm-night-btn-white mm-night-btn-lg">
+            Email us
+            <ArrowRight size={15} strokeWidth={2.25} />
+          </a>
+        </div>
+      </section>
+
+      <footer className="mm-night-foot">
+        <span>Mineral Map. Eagle Ford Basin.</span>
+        <div style={{ display: 'flex', gap: 20 }}>
+          <Link href="/landing">Overview</Link>
+          <Link href="/auth">Sign in</Link>
+          <a href={`mailto:${CONTACT_EMAIL}`}>Contact</a>
+        </div>
+      </footer>
+    </div>
+  )
+}
+
+function FragmentGroup({ group }: { group: CompareGroup }) {
+  return (
+    <>
+      <tr className="pr-compare-group">
+        <td colSpan={4}>{group.group}</td>
+      </tr>
+      {group.rows.map((row) => (
+        <tr key={row.label}>
+          <td>{row.label}</td>
+          {row.values.map((value, index) => (
+            <td key={`${row.label}-${index}`}>
+              <CompareValue value={value} />
+            </td>
+          ))}
+        </tr>
+      ))}
     </>
   )
 }
