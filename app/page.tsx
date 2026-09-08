@@ -3,16 +3,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
-  LineChart,
-  Line,
+  Area,
+  AreaChart,
+  CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Mail,
+  Phone,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
 
 import { supabase } from '@/lib/supabase'
-import AppLogo from '@/app/components/AppLogo'
+import AppHeader from '@/app/components/AppHeader'
 import { identifyUser, trackEvent } from '@/lib/posthog'
 import { COUNTIES } from '@/lib/counties'
 
@@ -207,7 +220,7 @@ const ONBOARDING_STEPS = [
   {
     step: '03',
     title: 'Click any tract',
-    body: 'Clicking a tract opens a ranked list of every fractional owner. Owners are sorted by propensity score — the most likely sellers at the top. Expand any row to see exactly why they scored that way.',
+    body: 'Clicking a tract opens a ranked list of every fractional owner. Owners are sorted by propensity score, so the most likely sellers sit at the top. Expand any row to see exactly why they scored that way.',
   },
   {
     step: '04',
@@ -382,7 +395,6 @@ export default function Home() {
   const [pipelineOwners, setPipelineOwners] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
-  const [navMenuOpen, setNavMenuOpen] = useState(false)
   const [expandedOwner, setExpandedOwner] = useState<number | null>(null)
   const [wellsExpanded, setWellsExpanded] = useState(false)
   const [tractWells, setTractWells] = useState<WellSummary[]>([])
@@ -440,9 +452,7 @@ export default function Home() {
   const showCountyArrows = mapLevel === 'tract'
   const desktopPanelWidth = Math.min(420, Math.max(300, windowWidth * 0.3))
   const rightArrowOffset = selected && !isMobile ? desktopPanelWidth + 8 : 8
-  const hideSecondaryNavActions = !isMobile && windowWidth < 1100
-  const backToAllLabel = !isMobile && windowWidth < 1100 ? '← All' : '← All Counties'
-  const countySummaryText = `${countyStatsByLabel['Survey abstracts'] ?? '—'} survey abstracts · ${countyStatsByLabel['Total owners'] ?? '—'} mineral owners`
+  const countySummaryText = `${countyStatsByLabel['Survey abstracts'] ?? 'n/a'} survey abstracts, ${countyStatsByLabel['Total owners'] ?? 'n/a'} mineral owners`
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToastType(type)
@@ -843,9 +853,9 @@ export default function Home() {
     const isIndividual = ownerTypePriority(owner.owner_name) === 0
 
     if (isIndividual) {
-      signals.push('Individual owner — highest priority')
+      signals.push('Individual owner: highest priority')
       if (state && state !== 'TX' && state !== 'TEXAS') {
-        signals.push('Out of state individual — top target')
+        signals.push('Out of state individual: top target')
       }
     }
     if (!isIndividual && state && state !== 'TX' && state !== 'TEXAS' && state.length > 0)
@@ -1488,7 +1498,7 @@ export default function Home() {
     legalSystemLine = selectedDescRaw
     const sectionPart = selectedSurvSect ? `Section ${selectedSurvSect}` : ''
     const blockPart = selectedBlock ? `Block ${selectedBlock}` : ''
-    legalSectionLine = [sectionPart, blockPart].filter(Boolean).join(' · ')
+    legalSectionLine = [sectionPart, blockPart].filter(Boolean).join(', ')
     const granteeName = selectedSurvName && selectedSurvName !== selectedDescRaw
       ? selectedSurvName
       : ''
@@ -1509,464 +1519,213 @@ export default function Home() {
   // grants), in which case the line is omitted entirely.
   const tractLegalDescription = buildLegalDescription(selected)
 
+  const tierColorFor = (score: number) =>
+    score >= 8 ? '#F44336' : score >= 6 ? '#FF9800' : score >= 4 ? '#FFC107' : '#4CAF50'
+
+  const resetToAllCounties = () => {
+    setMapLevel('county')
+    setSelected(null)
+    setExpandedOwner(null)
+    setSearchQuery('')
+    setSearchResults([])
+    setSearchOpen(false)
+    setOwnerTracts([])
+    setOwnerTractsName('')
+  }
+
+  const countyContext = (
+    <>
+      <div className="mm-context" title="Active county">
+        <span className="mm-context-label mm-topbar-hide-narrow">County</span>
+        <select
+          className="mm-select"
+          value={selectedCounty}
+          onChange={(event) => setSelectedCounty(event.target.value as CountyKey)}
+          aria-label="Select county"
+        >
+          {Object.entries(COUNTIES).map(([countyId, countyConfig]) => (
+            <option key={countyId} value={countyId}>
+              {countyConfig.name} County
+            </option>
+          ))}
+        </select>
+      </div>
+      {mapLevel === 'tract' && (
+        <button type="button" className="mm-btn mm-btn-ghost mm-btn-sm" onClick={resetToAllCounties}>
+          <ChevronLeft size={13} strokeWidth={2.25} />
+          <span className="mm-topbar-hide-narrow">All counties</span>
+        </button>
+      )}
+    </>
+  )
+
+  const ownerSearch = !isMobile ? (
+    <div className="mm-search">
+      <div className="mm-search-field">
+        <span className="mm-search-icon">
+          <Search size={14} strokeWidth={2.25} />
+        </span>
+        <input
+          type="text"
+          placeholder="Search mineral owners by name"
+          value={searchQuery}
+          onChange={(e) => {
+            void handleSearch(e.target.value)
+            setSearchOpen(true)
+          }}
+          onFocus={() => setSearchOpen(true)}
+          onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+          aria-label="Search owners"
+        />
+        {searching ? <span className="mm-spinner" /> : <span className="mm-kbd">/</span>}
+      </div>
+
+      {searchOpen && searchResults.length > 0 && (
+        <div className="mm-popover" role="listbox">
+          {searchResults.map((result, i) => {
+            const score = Number(result.propensity_score ?? 0)
+            const scoreColor =
+              score >= 8 ? '#F44336' : score >= 5 ? '#FF9800' : score >= 2 ? '#8BC34A' : '#9E9E9E'
+            const locality =
+              result.mailing_city && result.mailing_state
+                ? `${result.mailing_city}, ${result.mailing_state}`
+                : ''
+            const leaseCount = Number(result.leaseCount ?? 1)
+            return (
+              <div
+                key={`${result.owner_name}-${i}`}
+                className="mm-popover-row"
+                role="option"
+                aria-selected={false}
+                onMouseDown={() => {
+                  setSearchQuery(result.owner_name)
+                  setSearchOpen(false)
+                  void handleSearchSelect(result)
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div className="mm-row-title">{result.owner_name}</div>
+                  <div className="mm-row-sub" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {locality && <span>{locality}</span>}
+                    {result.countyName && (
+                      <span className="mm-chip mm-chip-sm">{result.countyName}</span>
+                    )}
+                    {leaseCount > 1 ? (
+                      <span className="mm-chip mm-chip-sm mm-num">{leaseCount} leases</span>
+                    ) : result.operator_name ? (
+                      <span>{result.operator_name}</span>
+                    ) : null}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                  <span className="mm-score" style={{ color: scoreColor }}>
+                    {score}
+                    <small>/10</small>
+                  </span>
+                  {result.acreage ? (
+                    <span className="mm-meta mm-num" style={{ marginTop: 0 }}>
+                      {Number(result.acreage).toFixed(1)} ac
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
+          <div className="mm-popover-foot">
+            <span>{searchResults.length} results</span>
+            <span>Sorted by score</span>
+          </div>
+        </div>
+      )}
+
+      {searchOpen && searchQuery.length >= 3 && searchResults.length === 0 && !searching && (
+        <div className="mm-popover">
+          <div className="mm-empty">No owners found for &quot;{searchQuery}&quot;</div>
+        </div>
+      )}
+    </div>
+  ) : null
+
+  const skipTracePct = skipTraceUsage
+    ? Math.min(100, Math.round((skipTraceUsage.count / Math.max(1, skipTraceUsage.limit)) * 100))
+    : 0
+  const skipTraceHigh = Boolean(skipTraceUsage && skipTraceUsage.count >= 180)
+
+  const headerActions = (
+    <>
+      {!isMobile && skipTraceUsage && (
+        <div
+          className="mm-usage mm-topbar-hide-narrow"
+          title={`${skipTraceUsage.count} of ${skipTraceUsage.limit} skip traces used this month`}
+        >
+          <span className="mm-usage-label">Skip traces</span>
+          <span className="mm-usage-meter">
+            <span style={{ width: `${skipTracePct}%`, background: skipTraceHigh ? '#DC2626' : undefined }} />
+          </span>
+          <span className="mm-usage-count mm-num" style={{ color: skipTraceHigh ? '#DC2626' : undefined }}>
+            {skipTraceUsage.count}
+            <span style={{ color: '#9CA3AF' }}>/{skipTraceUsage.limit}</span>
+          </span>
+        </div>
+      )}
+      <button
+        type="button"
+        className="mm-btn mm-btn-ghost mm-topbar-hide-narrow"
+        onClick={() => {
+          setOnboardingStep(0)
+          setShowOnboarding(true)
+        }}
+      >
+        <Compass size={14} strokeWidth={2} />
+        Tour
+      </button>
+    </>
+  )
+
+  const overviewTitle = mapLevel === 'county' ? 'All counties' : county.displayName
+
   return (
     <div
+      className="mm-app"
       style={{
         height: '100dvh',
         background: '#FFFFFF',
-        color: '#111827',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'system-ui, sans-serif',
       }}
     >
-      {/* Top header */}
-      <div
-        style={{
-          height: isMobile ? 56 : 52,
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E5E7EB',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: isMobile ? '0 10px' : '0 20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-          gap: isMobile ? 8 : 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setNavMenuOpen((prev) => !prev)}
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 6,
-                border: '1px solid #E5E7EB',
-                background: '#FFFFFF',
-                color: '#111827',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                padding: 0,
-              }}
-              aria-label="Open navigation menu"
-            >
-              <span
-                style={{
-                  display: 'inline-flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                  width: 12,
-                }}
-              >
-                <span style={{ display: 'block', height: 1.5, background: '#111827' }} />
-                <span style={{ display: 'block', height: 1.5, background: '#111827' }} />
-                <span style={{ display: 'block', height: 1.5, background: '#111827' }} />
-              </span>
-            </button>
-            {navMenuOpen && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 36,
-                  left: 0,
-                  zIndex: 1200,
-                  background: '#FFFFFF',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: 8,
-                  minWidth: 220,
-                  overflow: 'hidden',
-                  boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
-                }}
-              >
-                <a
-                  href="/"
-                  style={{
-                    display: 'block',
-                    padding: '10px 16px',
-                    fontSize: 13,
-                    color: '#374151',
-                    textDecoration: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    borderBottom: '1px solid #F3F4F6',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#FEF3C7'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                  }}
-                >
-                  ← Map
-                </a>
-                <a
-                  href="/crm"
-                  style={{
-                    display: 'block',
-                    padding: '10px 16px',
-                    fontSize: 13,
-                    color: '#374151',
-                    textDecoration: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    borderBottom: '1px solid #F3F4F6',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#FEF3C7'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                  }}
-                >
-                  CRM & Pipeline
-                </a>
-                <a
-                  href="/methodology"
-                  style={{
-                    display: 'block',
-                    padding: '10px 16px',
-                    fontSize: 13,
-                    color: '#374151',
-                    textDecoration: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    borderBottom: '1px solid #F3F4F6',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#FEF3C7'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent'
-                  }}
-                >
-                  📊 Methodology
-                </a>
-                <div style={{ borderTop: '1px solid #E5E7EB', margin: '2px 0 0' }} />
-                <div style={{ padding: '10px 16px 4px', fontSize: 11, color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>
-                  {navCountyLabel}
-                </div>
-                <div style={{ padding: '0 16px 12px', fontSize: 11, color: '#9CA3AF', fontFamily: 'Inter, sans-serif' }}>
-                  {countySummaryText}
-                </div>
-              </div>
-            )}
-          </div>
-          <AppLogo width={150} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
-            {!isMobile && (
-              <span style={{ fontSize: 11, color: '#6B7280', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap' }}>
-                {navCountyLabel}
-              </span>
-            )}
-            {mapLevel === 'tract' && (
-              <button
-                onClick={() => {
-                  setMapLevel('county')
-                  setSelected(null)
-                  setExpandedOwner(null)
-                  setSearchQuery('')
-                  setSearchResults([])
-                  setSearchOpen(false)
-                  setOwnerTracts([])
-                  setOwnerTractsName('')
-                }}
-                style={{
-                  height: 26,
-                  border: '1px solid #E5E7EB',
-                  borderRadius: 6,
-                  background: '#FFFFFF',
-                  color: '#6B7280',
-                  fontSize: 11,
-                  fontFamily: 'Inter, sans-serif',
-                  padding: '0 8px',
-                  cursor: 'pointer',
-                }}
-              >
-                {backToAllLabel}
-              </button>
-            )}
-            <select
-              value={selectedCounty}
-              onChange={(event) => setSelectedCounty(event.target.value as CountyKey)}
-              style={{
-                height: 26,
-                border: '1px solid #E5E7EB',
-                borderRadius: 6,
-                background: '#FFFFFF',
-                color: '#6B7280',
-                fontSize: 11,
-                fontFamily: 'Inter, sans-serif',
-                padding: '0 8px',
-                outline: 'none',
-              }}
-            >
-              {Object.entries(COUNTIES).map(([countyId, countyConfig]) => (
-                <option key={countyId} value={countyId}>
-                  {countyConfig.name} County
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {!isMobile && (
-          <div style={{ position: 'relative', flex: 1, maxWidth: 360, margin: '0 16px' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: '#F3F4F6', border: '1px solid #E5E7EB',
-              borderRadius: 8, padding: '6px 12px',
-              transition: 'all 0.15s'
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.5" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search owners..."
-                value={searchQuery}
-                onChange={(e) => { void handleSearch(e.target.value); setSearchOpen(true) }}
-                onFocus={() => setSearchOpen(true)}
-                onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
-                style={{
-                  border: 'none', background: 'transparent', outline: 'none',
-                  fontSize: 13, color: '#111827', width: '100%',
-                  fontFamily: 'Inter, sans-serif'
-                }}
-              />
-              {searching && (
-                <div style={{ width: 12, height: 12, border: '2px solid #E5E7EB', borderTopColor: '#EF9F27', borderRadius: '50%', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />
-              )}
-            </div>
-
-            {searchOpen && searchResults.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 1000, overflow: 'hidden'
-              }}>
-                {searchResults.map((result, i) => {
-                  const score = Number(result.propensity_score ?? 0)
-                  const scoreColor = score >= 8 ? '#F44336' : score >= 5 ? '#FF9800' : score >= 2 ? '#8BC34A' : '#9E9E9E'
-                  return (
-                    <div
-                      key={`${result.owner_name}-${i}`}
-                      onMouseDown={() => {
-                        setSearchQuery(result.owner_name)
-                        setSearchOpen(false)
-                        void handleSearchSelect(result)
-                      }}
-                      style={{
-                        padding: '10px 14px', cursor: 'pointer',
-                        borderBottom: i < searchResults.length - 1 ? '1px solid #F3F4F6' : 'none',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#F9FAFB' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#fff' }}
-                    >
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{result.owner_name}</div>
-                        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                          {result.mailing_city && result.mailing_state ? `${result.mailing_city}, ${result.mailing_state}` : ''}
-                          {result.countyName ? ` · ${result.countyName}` : ''}
-                          {Number(result.leaseCount ?? 1) > 1 ? (
-                            <span
-                              style={{
-                                marginLeft: 6,
-                                background: '#F3F4F6',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: 4,
-                                padding: '1px 5px',
-                                fontSize: 10,
-                                color: '#6B7280',
-                              }}
-                            >
-                              {result.leaseCount} leases
-                            </span>
-                          ) : result.operator_name ? ` · ${result.operator_name}` : ''}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: scoreColor, fontFamily: 'monospace' }}>{score}/10</span>
-                        {result.acreage && <span style={{ fontSize: 10, color: '#9CA3AF' }}>{Number(result.acreage).toFixed(1)} ac</span>}
-                      </div>
-                    </div>
-                  )
-                })}
-                <div style={{ padding: '8px 14px', fontSize: 11, color: '#9CA3AF', borderTop: '1px solid #F3F4F6', background: '#FAFAFA' }}>
-                  {searchResults.length} results · sorted by score
-                </div>
-              </div>
-            )}
-
-            {searchOpen && searchQuery.length >= 3 && searchResults.length === 0 && !searching && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10,
-                padding: '16px 14px', fontSize: 13, color: '#9CA3AF', textAlign: 'center',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 1000
-              }}>
-                No owners found for &quot;{searchQuery}&quot;
-              </div>
-            )}
-          </div>
-        )}
-        {!isMobile && skipTraceUsage && (
-          <div
-            style={{
-              fontSize: 11,
-              color: skipTraceUsage.count >= 180 ? '#dc2626' : '#9CA3AF',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              whiteSpace: 'nowrap',
-              marginRight: 8,
-            }}
-          >
-            <span>Skip traces:</span>
-            <span
-              style={{
-                fontWeight: 600,
-                color: skipTraceUsage.count >= 180 ? '#dc2626' : '#374151',
-              }}
-            >
-              {skipTraceUsage.count}
-            </span>
-            <span>/ {skipTraceUsage.limit}</span>
-          </div>
-        )}
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            maxWidth: isMobile ? '55vw' : 'none',
-            overflowX: isMobile ? 'auto' : 'visible',
-            paddingBottom: isMobile ? 2 : 0,
-            flexShrink: 1,
-          }}
-        >
-          {!hideSecondaryNavActions && (
-            <a
-              href="/methodology"
-              style={{
-                fontSize: 12,
-                color: '#6B7280',
-                textDecoration: 'none',
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid #E5E7EB',
-                fontFamily: 'Inter, sans-serif',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Methodology
-            </a>
-          )}
-          <a
-            href="/crm"
-            style={{
-              fontSize: 12,
-              color: '#EF9F27',
-              textDecoration: 'none',
-              padding: '6px 14px',
-              borderRadius: 6,
-              border: '1px solid #EF9F27',
-              fontWeight: 500,
-              fontFamily: 'Inter, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            CRM →
-          </a>
-          <a
-            href="/comps"
-            style={{
-              fontSize: 12,
-              color: '#6B7280',
-              textDecoration: 'none',
-              padding: '6px 12px',
-              borderRadius: 6,
-              border: '1px solid #E5E7EB',
-              fontFamily: 'Inter, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Comps
-          </a>
-          {!hideSecondaryNavActions && (
-            <a
-              href="/account"
-              style={{
-                fontSize: 12,
-                color: '#6B7280',
-                textDecoration: 'none',
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid #E5E7EB',
-                fontFamily: 'Inter, sans-serif',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Account
-            </a>
-          )}
-          <button
-            onClick={() => {
-              setOnboardingStep(0)
-              setShowOnboarding(true)
-            }}
-            style={{
-              fontSize: 12,
-              color: '#6B7280',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '6px 12px',
-              fontFamily: 'Inter, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Tour
-          </button>
-          <button
-            onClick={async () => {
-              await supabase.auth.signOut()
-              window.location.href = '/auth'
-            }}
-            style={{
-              fontSize: 12,
-              color: '#6B7280',
-              padding: '6px 12px',
-              borderRadius: 6,
-              border: '1px solid #E5E7EB',
-              background: '#FFFFFF',
-              cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
+      <AppHeader
+        active="map"
+        compact={isMobile}
+        context={countyContext}
+        center={ownerSearch}
+        actions={headerActions}
+        menuMeta={
+          <>
+            <strong>{navCountyLabel}</strong>
+            {countySummaryText}
+          </>
+        }
+      />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
         {/* Left panel */}
-        <div
+        <aside
+          className="mm-panel"
           style={{
             width: isMobile ? '100%' : 'clamp(300px, 30vw, 420px)',
             minWidth: isMobile ? 0 : 'clamp(300px, 30vw, 420px)',
-            background: '#F8F8F8',
-            borderRight: isMobile ? 'none' : '1px solid #E5E7EB',
+            borderRight: isMobile ? 'none' : undefined,
             borderTop: isMobile ? '1px solid #E5E7EB' : 'none',
-            overflowY: 'auto',
-            padding: 14,
             order: isMobile ? 2 : 1,
             maxHeight: isMobile ? '52dvh' : 'none',
           }}
         >
           {selected ? (
-            <div>
+            <div className="mm-enter-left" key={abstractLabel}>
               <button
+                type="button"
+                className="mm-back"
                 onClick={() => {
                   setSelected(null)
                   // If we're in an owner-tracts session, keep the list so the
@@ -1976,169 +1735,172 @@ export default function Home() {
                     setOwnerTractsName('')
                   }
                 }}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: '#6B7280',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  padding: '12px 16px',
-                  marginBottom: 4,
-                  fontFamily: 'Inter, sans-serif',
-                }}
               >
-                ← Back
+                <ChevronLeft size={14} strokeWidth={2.25} />
+                Back
               </button>
 
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: '#6B7280',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {abstractLabel}
-              </div>
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 10 }}>
+                <div className="mm-kicker" style={{ color: '#6B7280' }}>{abstractLabel}</div>
                 {legalSystemLine && (
-                  <div
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: 11,
-                      color: '#9CA3AF',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      marginBottom: 2,
-                    }}
-                  >
-                    {legalSystemLine}
-                  </div>
+                  <div className="mm-kicker" style={{ marginTop: 6 }}>{legalSystemLine}</div>
                 )}
                 {legalSectionLine && (
                   <div
                     style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: 18,
-                      fontWeight: 700,
+                      fontSize: 19,
+                      fontWeight: 600,
                       color: '#111827',
-                      letterSpacing: '-0.01em',
-                      marginBottom: 2,
-                      lineHeight: 1.3,
+                      letterSpacing: '-0.015em',
+                      lineHeight: 1.25,
+                      marginTop: 4,
                     }}
                   >
                     {legalSectionLine}
                   </div>
                 )}
                 {legalGranteeLine && (
-                  <div
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: 11,
-                      color: '#6B7280',
-                    }}
-                  >
-                    {legalGranteeLine}
-                  </div>
+                  <div style={{ fontSize: 12, color: '#6B7280', marginTop: 3 }}>{legalGranteeLine}</div>
                 )}
               </div>
-              <div style={{ borderTop: '1px solid #E5E7EB', marginTop: 12, marginBottom: 10 }} />
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, background: 'rgba(244,67,54,0.15)', color: '#F44336', border: '0.5px solid rgba(244,67,54,0.35)' }}>
-                  {maxScore}/10 HOT
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '14px 0 14px' }}>
+                <span
+                  className="mm-score-pill"
+                  style={{
+                    color: tierColorFor(maxScore),
+                    borderColor: `${tierColorFor(maxScore)}55`,
+                    background: `${tierColorFor(maxScore)}14`,
+                  }}
+                >
+                  {maxScore}/10 {maxScore >= 8 ? 'hot' : maxScore >= 6 ? 'motivated' : 'prospect'}
                 </span>
-                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, background: 'rgba(239,159,39,0.15)', color: '#EF9F27', border: '0.5px solid rgba(239,159,39,0.35)' }}>
-                  {ownerCount} owners
-                </span>
-                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, background: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB' }}>
-                  {topOperator}
-                </span>
+                <span className="mm-chip mm-chip-amber mm-num">{ownerCount.toLocaleString()} owners</span>
+                <span className="mm-chip" title="Top operator">{topOperator}</span>
               </div>
 
-              <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ color: '#EF9F27', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>PRODUCTION HISTORY</div>
-                <div style={{ width: '100%', height: 140, minHeight: 140 }}>
-                  <ResponsiveContainer width="100%" height={140}>
-                    <LineChart data={productionData}>
-                      <XAxis dataKey="month" stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 10 }} />
-                      <YAxis stroke="#6B7280" tick={{ fill: '#6B7280', fontSize: 10 }} />
-                      <Tooltip
-                        contentStyle={{ background: '#FFFFFF', border: '1px solid #E5E7EB', color: '#111827' }}
-                        labelStyle={{ color: '#6B7280' }}
-                      />
-                      <Line type="monotone" dataKey="oil" stroke="#EF9F27" strokeWidth={2} dot={{ r: 2 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+              <div className="mm-card" style={{ marginBottom: 12 }}>
+                <div className="mm-card-head">
+                  <span className="mm-kicker">Production history</span>
+                  <span className="mm-chip mm-chip-sm" style={{ textTransform: 'capitalize' }}>
+                    {productionTrend}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: '#6B7280' }}>
-                  <span>Peak production: {productionPeak.toLocaleString()}</span>
-                  <span>Current trend: {productionTrend}</span>
+                <div style={{ padding: '12px 8px 4px 0' }}>
+                  <div style={{ width: '100%', height: 140, minHeight: 140 }}>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <AreaChart data={productionData} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="mm-prod-fill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#EF9F27" stopOpacity={0.28} />
+                            <stop offset="100%" stopColor="#EF9F27" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} stroke="#F3F4F6" />
+                        <XAxis
+                          dataKey="month"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}
+                          width={54}
+                        />
+                        <Tooltip
+                          cursor={{ stroke: '#E5E7EB' }}
+                          contentStyle={{
+                            background: '#FFFFFF',
+                            border: '1px solid #E5E7EB',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 12px rgba(17,24,39,0.08)',
+                            color: '#111827',
+                            fontSize: 12,
+                          }}
+                          labelStyle={{ color: '#6B7280', fontSize: 11 }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="oil"
+                          stroke="#EF9F27"
+                          strokeWidth={2}
+                          fill="url(#mm-prod-fill)"
+                          dot={false}
+                          activeDot={{ r: 3, strokeWidth: 0 }}
+                          isAnimationActive
+                          animationDuration={600}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '8px 14px 12px',
+                    fontSize: 11,
+                    color: '#6B7280',
+                  }}
+                >
+                  <span>
+                    Peak <span className="mm-num" style={{ color: '#374151' }}>{productionPeak.toLocaleString()}</span>
+                  </span>
+                  <span>
+                    Trend <span style={{ color: '#374151', textTransform: 'capitalize' }}>{productionTrend}</span>
+                  </span>
                 </div>
               </div>
 
-              <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ color: '#EF9F27', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>OPERATOR & LEASE INFO</div>
-                <div style={{ fontSize: 12, color: '#111827', marginBottom: 6 }}>Operator: {selected.top_operator}</div>
-                <div style={{ fontSize: 12, color: '#111827', marginBottom: 6 }}>Field: {fieldName}</div>
-                <div style={{ fontSize: 12, color: '#111827', marginBottom: 6 }}>Well status: {selected.well_status || 'PRODUCING / SHUT IN'}</div>
-                <div style={{ fontSize: 12, color: '#111827' }}>Est. lease expiration: {estExpiration}</div>
+              <div className="mm-card" style={{ marginBottom: 12 }}>
+                <div className="mm-card-head">
+                  <span className="mm-kicker">Operator and lease</span>
+                </div>
+                <dl className="mm-deflist">
+                  <dt>Operator</dt>
+                  <dd>{selected.top_operator}</dd>
+                  <dt>Field</dt>
+                  <dd>{fieldName}</dd>
+                  <dt>Well status</dt>
+                  <dd>{selected.well_status || 'PRODUCING / SHUT IN'}</dd>
+                  <dt>Est. lease expiration</dt>
+                  <dd>{estExpiration}</dd>
+                </dl>
               </div>
 
               {(tractWellsLoaded || tractWellsLoading) && (
-                <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
-                  <div style={{ borderTop: '1px solid #F3F4F6' }}>
-                    <button
-                      onClick={() => setWellsExpanded(!wellsExpanded)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: '#6B7280',
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                      }}>
-                        Wells in this tract ({tractWells.length})
-                      </div>
-                      <div style={{
-                        fontSize: 10,
-                        color: '#9CA3AF',
-                        transform: wellsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                        transition: 'transform 0.2s',
-                      }}>
-                        ▼
-                      </div>
-                    </button>
+                <div className="mm-card" style={{ marginBottom: 12, overflow: 'hidden' }}>
+                  <button
+                    type="button"
+                    className="mm-collapse-head"
+                    aria-expanded={wellsExpanded}
+                    onClick={() => setWellsExpanded(!wellsExpanded)}
+                  >
+                    <span className="mm-kicker">
+                      Wells in this tract
+                      <span className="mm-nav-badge" style={{ marginLeft: 8 }}>{tractWells.length}</span>
+                    </span>
+                    <ChevronDown size={14} strokeWidth={2.25} />
+                  </button>
 
-                    {wellsExpanded && (
-                      <div style={{ paddingBottom: 8 }}>
-                        {tractWellsLoading && (
-                          <div style={{ padding: '8px 16px', fontSize: 11, color: '#9CA3AF', fontStyle: 'italic' }}>
-                            Loading tract wells...
-                          </div>
-                        )}
-                        {!tractWellsLoading && tractWells.length === 0 && (
-                          <div style={{ padding: '8px 16px', fontSize: 11, color: '#9CA3AF', fontStyle: 'italic' }}>
-                            No wells matched this tract
-                          </div>
-                        )}
-                        {!tractWellsLoading && tractWells.map((well, i) => (
+                  {wellsExpanded && (
+                    <div className="mm-enter" style={{ borderTop: '1px solid #F3F4F6', paddingBottom: 4 }}>
+                      {tractWellsLoading && (
+                        <div className="mm-empty" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                          <span className="mm-spinner" /> Loading tract wells
+                        </div>
+                      )}
+                      {!tractWellsLoading && tractWells.length === 0 && (
+                        <div className="mm-empty" style={{ padding: '14px 16px' }}>No wells matched this tract</div>
+                      )}
+                      {!tractWellsLoading &&
+                        tractWells.map((well, i) => (
                           <div
                             key={`${well.rrc_lease_id ?? well.lease_name ?? 'well'}-${i}`}
                             style={{
-                              padding: '6px 16px',
+                              padding: '8px 14px',
                               borderBottom: '1px solid #F9FAFB',
                               display: 'flex',
                               alignItems: 'center',
@@ -2147,36 +1909,26 @@ export default function Home() {
                             }}
                           >
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {well.lease_name}
-                              </div>
-                              <div style={{ fontSize: 11, color: '#6B7280' }}>
-                                {well.operator_name}
-                              </div>
+                              <div className="mm-row-title" style={{ fontSize: 12 }}>{well.lease_name}</div>
+                              <div className="mm-row-sub">{well.operator_name}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                               <span
+                                className="mm-tag"
                                 style={{
-                                  fontSize: 9,
-                                  fontWeight: 700,
-                                  padding: '1px 5px',
-                                  borderRadius: 3,
                                   background: well.oil_gas_code === 'G' ? '#EFF6FF' : '#FEF3C7',
                                   color: well.oil_gas_code === 'G' ? '#1D4ED8' : '#92400E',
-                                  border: `1px solid ${well.oil_gas_code === 'G' ? '#BFDBFE' : '#FDE68A'}`,
+                                  borderColor: well.oil_gas_code === 'G' ? '#BFDBFE' : '#FDE68A',
                                 }}
                               >
                                 {well.oil_gas_code === 'G' ? 'GAS' : 'OIL'}
                               </span>
                               <span
+                                className="mm-tag"
                                 style={{
-                                  fontSize: 9,
-                                  fontWeight: 600,
-                                  padding: '1px 5px',
-                                  borderRadius: 3,
                                   background: well.well_type === 'HORIZONTAL' ? '#FEF3C7' : '#F9FAFB',
-                                  color: well.well_type === 'HORIZONTAL' ? '#EF9F27' : '#6B7280',
-                                  border: `1px solid ${well.well_type === 'HORIZONTAL' ? '#FDE68A' : '#E5E7EB'}`,
+                                  color: well.well_type === 'HORIZONTAL' ? '#B45309' : '#6B7280',
+                                  borderColor: well.well_type === 'HORIZONTAL' ? '#FDE68A' : '#E5E7EB',
                                 }}
                               >
                                 {well.well_type === 'HORIZONTAL' ? 'H' : 'V'}
@@ -2184,92 +1936,89 @@ export default function Home() {
                             </div>
                           </div>
                         ))}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 16px',
-                  borderBottom: '1px solid #F3F4F6',
-                  background: '#F9FAFB',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#6B7280',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  All owners in tract ({filteredOwnersList.length})
+              <div className="mm-list">
+                <div className="mm-card-head">
+                  <span className="mm-kicker">
+                    Owners in tract
+                    <span className="mm-nav-badge" style={{ marginLeft: 8 }}>{filteredOwnersList.length}</span>
+                  </span>
+                  <div className="mm-segment" role="tablist" aria-label="Sort owners">
+                    {[
+                      { key: 'score', label: 'Score' },
+                      { key: 'interest', label: 'Interest' },
+                      { key: 'nra', label: 'NRA' },
+                    ].map((s) => (
+                      <button
+                        key={s.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={ownerSort === s.key}
+                        data-active={ownerSort === s.key}
+                        onClick={() => setOwnerSort(s.key as 'score' | 'interest' | 'nra')}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[
-                    { key: 'score', label: 'Score' },
-                    { key: 'interest', label: '% Ownership' },
-                    { key: 'nra', label: 'NRA' },
-                  ].map((s) => (
-                    <button
-                      key={s.key}
-                      onClick={() => setOwnerSort(s.key as 'score' | 'interest' | 'nra')}
-                      style={{
-                        fontSize: 10,
-                        padding: '3px 8px',
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: ownerSort === s.key ? 600 : 400,
-                        background: ownerSort === s.key ? '#EF9F27' : 'transparent',
-                        border: ownerSort === s.key ? '1px solid #EF9F27' : '1px solid #E5E7EB',
-                        color: ownerSort === s.key ? '#fff' : '#6B7280',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+
+                {cleanOwnersList.length === 0 && (
+                  <div className="mm-empty">No owners match the current filters</div>
+                )}
+
                 {cleanOwnersList.map((owner: TractOwner, i: number) => {
                   const score = Number(owner.propensity_score ?? 0)
                   const isExpanded = expandedOwner === i
                   const normalizedOwnerName = String(owner.owner_name ?? '').trim().toUpperCase()
                   const isHighlighted = highlightedOwner === normalizedOwnerName
                   const ownerElementId = ownerRowDomId(String(owner.owner_name ?? ''))
-                  const ownerKey = String(owner.id ?? `${normalizedOwnerName}-${normalizeLeaseId(owner.rrc_lease_id) || i}`)
+                  const ownerKey = String(
+                    owner.id ?? `${normalizedOwnerName}-${normalizeLeaseId(owner.rrc_lease_id) || i}`
+                  )
                   const ownerWellMatches = ownerWells[ownerKey] ?? []
                   const ownerWellLoading = Boolean(ownerWellsLoading[ownerKey])
                   const hasLoadedOwnerWells = Object.prototype.hasOwnProperty.call(ownerWells, ownerKey)
                   const signals = isExpanded ? getScoreBreakdown(owner) : []
-                  const scoreColor = score >= 8 ? '#F44336' : score >= 6 ? '#FF9800' : score >= 4 ? '#FFC107' : '#4CAF50'
+                  const scoreColor = tierColorFor(score)
                   const ownerType = classifyOwner(String(owner.owner_name ?? ''))
-                  const typeColor = ownerType === 'trust' ? '#7AB835' : ownerType === 'company' ? '#378ADD' : '#9CA3AF'
+                  const typeColor =
+                    ownerType === 'trust' ? '#7AB835' : ownerType === 'company' ? '#378ADD' : '#9CA3AF'
                   const typeLabel = ownerType === 'trust' ? 'TRUST' : ownerType === 'company' ? 'CO' : 'IND'
                   const nra = getNRA(owner, selected, county)
-                  const royaltyEstimate = estimateMonthlyRoyalty(
-                    owner,
-                    selected,
-                    county.ownershipPctIsDecimal
-                  )
-                  const ownershipPctValue = getOwnershipPctValue(
-                    owner,
-                    county.ownershipPctIsDecimal
-                  )
+                  const royaltyEstimate = estimateMonthlyRoyalty(owner, selected, county.ownershipPctIsDecimal)
+                  const ownershipPctValue = getOwnershipPctValue(owner, county.ownershipPctIsDecimal)
                   const ownershipDecimalValue = ownershipPctValue / 100
+                  const inPipeline = pipelineOwners.has(owner.owner_name)
+
+                  // Gross acres for the lease/tract. Owner.acreage is the
+                  // lease's gross acreage from the CAD roll; fall back to the
+                  // SHAPE_AREA-derived tract acreage when missing.
+                  const ownerAcres = Number(owner.acreage ?? 0)
+                  const grossAcres = ownerAcres > 0 ? ownerAcres : getTractGrossAcres(selected)
+                  const acresLabel =
+                    grossAcres > 0
+                      ? grossAcres >= 100
+                        ? grossAcres.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                        : grossAcres.toFixed(1)
+                      : null
 
                   return (
-                    <div key={`${owner.owner_name}-${i}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                    <div
+                      key={`${owner.owner_name}-${i}`}
+                      className="mm-owner"
+                      data-expanded={isExpanded}
+                      data-highlighted={isHighlighted}
+                    >
                       <div
                         id={ownerElementId}
+                        className="mm-owner-head"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           const nextExpanded = isExpanded ? null : i
                           setExpandedOwner(nextExpanded)
@@ -2282,230 +2031,196 @@ export default function Home() {
                             })
                           }
                         }}
-                        style={{
-                          padding: '10px 16px',
-                          cursor: 'pointer',
-                          background: isHighlighted ? '#FEF3C7' : isExpanded ? '#FFFBEB' : 'transparent',
-                          borderLeft: isHighlighted ? '3px solid #EF9F27' : '3px solid transparent',
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isExpanded && !isHighlighted) e.currentTarget.style.background = '#F9FAFB'
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isExpanded && !isHighlighted) {
-                            e.currentTarget.style.background = 'transparent'
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            ;(event.currentTarget as HTMLDivElement).click()
                           }
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ flex: 1, marginRight: 8 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#111827', lineHeight: 1.3 }}>
-                              {i + 1}. {owner.owner_name}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                              <span className="mm-num" style={{ fontSize: 10.5, color: '#9CA3AF', flexShrink: 0 }}>
+                                {String(i + 1).padStart(2, '0')}
+                              </span>
+                              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#111827', lineHeight: 1.3 }}>
+                                {owner.owner_name}
+                              </span>
                             </div>
                             {tractLegalDescription && (
-                              <div
-                                style={{
-                                  fontSize: 10,
-                                  color: '#6B7280',
-                                  fontFamily: 'monospace',
-                                  marginTop: 2,
-                                  letterSpacing: '0.02em',
-                                }}
-                              >
-                                {tractLegalDescription}
-                              </div>
+                              <div className="mm-meta-mono" style={{ marginTop: 3 }}>{tractLegalDescription}</div>
                             )}
-                            <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>
+                            <div className="mm-meta">
                               {owner.mailing_city && owner.mailing_state
                                 ? `${owner.mailing_city}, ${owner.mailing_state}`
                                 : 'Address unknown'}
                             </div>
                             {nra !== null && nra > 0 && (
                               <div
-                                style={{ fontSize: 10, color: '#374151', fontFamily: 'monospace', fontWeight: 600 }}
+                                className="mm-meta-mono"
+                                style={{ marginTop: 3, fontWeight: 600 }}
                                 title={royaltyEstimate ? `Est. royalty: ${royaltyEstimate}` : undefined}
                               >
-                                {nra < 0.01
-                                  ? `${nra.toFixed(4)} NRA`
-                                  : nra < 1
-                                    ? `${nra.toFixed(3)} NRA`
-                                    : `${nra.toFixed(2)} NRA`}
+                                {nra < 0.01 ? nra.toFixed(4) : nra < 1 ? nra.toFixed(3) : nra.toFixed(2)} NRA
                                 {!Number(owner.acreage) && (
-                                  <span style={{ fontSize: 9, color: '#9CA3AF', marginLeft: 3 }}>est.</span>
+                                  <span style={{ fontSize: 9.5, color: '#9CA3AF', marginLeft: 4, fontWeight: 500 }}>est.</span>
                                 )}
                               </div>
                             )}
-                            {ownershipPctValue > 0 && (() => {
-                              // Gross acres for the lease/tract. Owner.acreage
-                              // is the lease's gross acreage from the CAD roll
-                              // (e.g. "442" on a Martin lease); fall back to
-                              // SHAPE_AREA-derived tract acreage when missing.
-                              const ownerAcres = Number(owner.acreage ?? 0)
-                              const grossAcres = ownerAcres > 0
-                                ? ownerAcres
-                                : getTractGrossAcres(selected)
-                              const acresLabel = grossAcres > 0
-                                ? grossAcres >= 100
-                                  ? grossAcres.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                                  : grossAcres.toFixed(1)
-                                : null
-                              return (
-                                <>
-                                  <div style={{ fontSize: 10, color: '#6B7280' }}>
-                                    {acresLabel
-                                      ? `${ownershipPctValue.toFixed(4)}% interest on ${acresLabel} gross acres`
-                                      : `${ownershipPctValue.toFixed(4)}% interest`}
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10 }}>
-                                    <span style={{ color: '#9CA3AF' }}>DO Interest:</span>
-                                    <span style={{ color: '#374151', fontFamily: 'monospace', fontWeight: 600 }}>
-                                      {ownershipDecimalValue.toFixed(6)}
-                                    </span>
-                                    <span style={{ color: '#9CA3AF' }}>
-                                      ({ownershipPctValue.toFixed(4)}%)
-                                    </span>
-                                  </div>
-                                </>
-                              )
-                            })()}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor, fontFamily: 'monospace' }}>
-                              {score}/10
-                            </div>
-                            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 6, background: `${typeColor}15`, color: typeColor, border: `0.5px solid ${typeColor}30` }}>
-                              {typeLabel}
-                            </span>
-                            {owner.out_of_state && (
-                              <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 6, background: 'rgba(239,159,39,0.12)', color: '#B45309', border: '0.5px solid rgba(239,159,39,0.3)' }}>OOS</span>
+                            {ownershipPctValue > 0 && (
+                              <>
+                                <div className="mm-meta">
+                                  {acresLabel
+                                    ? `${ownershipPctValue.toFixed(4)}% interest on ${acresLabel} gross acres`
+                                    : `${ownershipPctValue.toFixed(4)}% interest`}
+                                </div>
+                                <div className="mm-meta" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ color: '#9CA3AF' }}>DO interest</span>
+                                  <span className="mm-meta-mono" style={{ fontWeight: 600 }}>
+                                    {ownershipDecimalValue.toFixed(6)}
+                                  </span>
+                                  <span style={{ color: '#9CA3AF' }}>({ownershipPctValue.toFixed(4)}%)</span>
+                                </div>
+                              </>
                             )}
                           </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                            <span className="mm-score" style={{ color: scoreColor }}>
+                              {score}
+                              <small>/10</small>
+                            </span>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              <span
+                                className="mm-tag"
+                                style={{ background: `${typeColor}14`, color: typeColor, borderColor: `${typeColor}40` }}
+                              >
+                                {typeLabel}
+                              </span>
+                              {owner.out_of_state && (
+                                <span
+                                  className="mm-tag"
+                                  style={{ background: 'rgba(239,159,39,0.12)', color: '#B45309', borderColor: 'rgba(239,159,39,0.35)' }}
+                                >
+                                  OOS
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 9, color: '#9CA3AF', marginTop: 4, display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
-                          {isExpanded ? 'Hide score breakdown' : 'Why this score?'}
+                        <div className="mm-owner-toggle">
+                          <ChevronRight size={11} strokeWidth={2.5} />
+                          {isExpanded ? 'Hide score breakdown' : 'Why this score'}
                         </div>
                       </div>
 
                       {isExpanded && (
-                        <div style={{ padding: '8px 16px 12px 28px', background: '#FFFBEB', borderTop: '1px solid #FDE68A' }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: '#92400E', letterSpacing: '0.08em', marginBottom: 6, textTransform: 'uppercase' }}>
-                            Score Signals
-                          </div>
+                        <div className="mm-owner-body">
+                          <div className="mm-kicker" style={{ color: '#92400E', marginBottom: 6 }}>Score signals</div>
                           {signals.length === 0 ? (
-                            <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic' }}>No strong signals detected</div>
+                            <div style={{ fontSize: 11.5, color: '#9CA3AF' }}>No strong signals detected</div>
                           ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                               {signals.map((signal, si) => (
-                                <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#EF9F27', flexShrink: 0 }} />
-                                  <span style={{ fontSize: 11, color: '#374151' }}>{signal}</span>
+                                <div key={si} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                  <span
+                                    style={{
+                                      width: 5,
+                                      height: 5,
+                                      borderRadius: '50%',
+                                      background: '#EF9F27',
+                                      flexShrink: 0,
+                                      marginTop: 6,
+                                    }}
+                                  />
+                                  <span style={{ fontSize: 11.5, color: '#374151', lineHeight: 1.45 }}>{signal}</span>
                                 </div>
                               ))}
                             </div>
                           )}
 
                           {ownerWellLoading && (
-                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
-                              <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic' }}>
-                                Looking up wells on this interest...
-                              </div>
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span className="mm-spinner" />
+                              <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>Looking up wells on this interest</span>
                             </div>
                           )}
 
                           {!ownerWellLoading && hasLoadedOwnerWells && ownerWellMatches.length === 0 && (
-                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
-                              <div style={{ fontSize: 11, color: '#9CA3AF', fontStyle: 'italic' }}>
-                                No matched wells on this interest
-                              </div>
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #FDE68A' }}>
+                              <div style={{ fontSize: 11.5, color: '#9CA3AF' }}>No matched wells on this interest</div>
                             </div>
                           )}
 
                           {ownerWellMatches.length > 0 && (
-                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-                                Wells on this interest
+                            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #FDE68A' }}>
+                              <div className="mm-kicker" style={{ marginBottom: 6 }}>Wells on this interest</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {ownerWellMatches.map((well, wi) => (
+                                  <div
+                                    key={`${well.rrc_lease_id ?? 'well'}-${wi}`}
+                                    style={{
+                                      padding: '7px 10px',
+                                      background: '#FFFFFF',
+                                      borderRadius: 8,
+                                      border: '1px solid #F3F4F6',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
+                                      <div className="mm-row-title" style={{ fontSize: 11.5 }}>{well.lease_name ?? 'Unknown lease'}</div>
+                                      <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                                        <span
+                                          className="mm-tag"
+                                          style={{
+                                            background: well.oil_gas_code === 'G' ? '#EFF6FF' : '#FEF3C7',
+                                            color: well.oil_gas_code === 'G' ? '#1D4ED8' : '#92400E',
+                                            borderColor: well.oil_gas_code === 'G' ? '#BFDBFE' : '#FDE68A',
+                                          }}
+                                        >
+                                          {well.oil_gas_code === 'G' ? 'GAS' : 'OIL'}
+                                        </span>
+                                        <span
+                                          className="mm-tag"
+                                          style={{
+                                            background: well.well_type === 'HORIZONTAL' ? '#FEF3C7' : '#F9FAFB',
+                                            color: well.well_type === 'HORIZONTAL' ? '#B45309' : '#9CA3AF',
+                                            borderColor: well.well_type === 'HORIZONTAL' ? '#FDE68A' : '#E5E7EB',
+                                          }}
+                                        >
+                                          {well.well_type === 'HORIZONTAL' ? 'HZ' : 'VT'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="mm-meta" style={{ marginTop: 0 }}>
+                                      Operator: {well.operator_name ?? 'Unknown operator'}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                              {ownerWellMatches.map((well, wi) => (
-                                <div
-                                  key={`${well.rrc_lease_id ?? 'well'}-${wi}`}
-                                  style={{
-                                    marginBottom: 6,
-                                    padding: '6px 8px',
-                                    background: '#F9FAFB',
-                                    borderRadius: 6,
-                                    border: '1px solid #F3F4F6',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                                    <div style={{ fontSize: 11, fontWeight: 600, color: '#111827' }}>
-                                      {well.lease_name ?? 'Unknown lease'}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 3 }}>
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 700,
-                                          padding: '1px 5px',
-                                          borderRadius: 3,
-                                          background: well.oil_gas_code === 'G' ? '#EFF6FF' : '#FEF3C7',
-                                          color: well.oil_gas_code === 'G' ? '#1D4ED8' : '#92400E',
-                                          border: `1px solid ${well.oil_gas_code === 'G' ? '#BFDBFE' : '#FDE68A'}`,
-                                        }}
-                                      >
-                                        {well.oil_gas_code === 'G' ? 'GAS' : 'OIL'}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fontSize: 9,
-                                          fontWeight: 600,
-                                          padding: '1px 5px',
-                                          borderRadius: 3,
-                                          background: well.well_type === 'HORIZONTAL' ? '#FEF3C7' : '#F9FAFB',
-                                          color: well.well_type === 'HORIZONTAL' ? '#D97706' : '#9CA3AF',
-                                          border: `1px solid ${well.well_type === 'HORIZONTAL' ? '#FDE68A' : '#E5E7EB'}`,
-                                        }}
-                                      >
-                                        {well.well_type === 'HORIZONTAL' ? 'HZ' : 'VT'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div style={{ fontSize: 10, color: '#6B7280' }}>
-                                    Operator: {well.operator_name ?? 'Unknown operator'}
-                                  </div>
-                                </div>
-                              ))}
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
                             <button
+                              type="button"
+                              className={`mm-btn mm-btn-sm ${inPipeline ? 'mm-btn-success-soft' : 'mm-btn-amber-soft'}`}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleAddToPipeline(owner)
                               }}
-                              style={{
-                                fontSize: 10, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
-                                background: pipelineOwners.has(owner.owner_name) ? 'rgba(122,184,53,0.15)' : 'rgba(239,159,39,0.12)',
-                                border: pipelineOwners.has(owner.owner_name) ? '0.5px solid #7AB835' : '0.5px solid #EF9F27',
-                                color: pipelineOwners.has(owner.owner_name) ? '#7AB835' : '#B45309',
-                              }}
                             >
-                              {pipelineOwners.has(owner.owner_name) ? '✓ In pipeline' : '+ Add to pipeline'}
+                              {inPipeline ? <Check size={12} strokeWidth={2.5} /> : <Plus size={12} strokeWidth={2.5} />}
+                              {inPipeline ? 'In pipeline' : 'Add to pipeline'}
                             </button>
                             <button
+                              type="button"
+                              className="mm-btn mm-btn-sm mm-btn-secondary"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleSkipTrace(owner)
                               }}
-                              style={{
-                                fontSize: 10, padding: '4px 10px', borderRadius: 4, cursor: 'pointer',
-                                background: 'transparent',
-                                border: '0.5px solid #E5E7EB',
-                                color: '#6B7280',
-                              }}
                             >
+                              <Phone size={12} strokeWidth={2.25} />
                               Skip trace
                             </button>
                           </div>
@@ -2516,55 +2231,56 @@ export default function Home() {
                 })}
               </div>
 
-              <div style={{ display: 'flex', marginTop: 14 }}>
-                <button style={{ width: '100%', padding: '9px', borderRadius: 6, border: '0.5px solid rgba(239,159,39,0.4)', background: 'rgba(239,159,39,0.15)', color: '#EF9F27', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+              <div style={{ display: 'flex', marginTop: 12 }}>
+                <button type="button" className="mm-btn mm-btn-amber-soft mm-btn-block">
+                  <Plus size={13} strokeWidth={2.5} />
                   Add all to pipeline
                 </button>
               </div>
             </div>
           ) : ownerTractsName ? (
-            <div>
+            <div className="mm-enter-left">
               <button
+                type="button"
+                className="mm-back"
                 onClick={() => {
                   setOwnerTracts([])
                   setOwnerTractsName('')
                   setOwnerTractsLoading(false)
                 }}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: '#6B7280',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  padding: '12px 16px',
-                  marginBottom: 4,
-                  fontFamily: 'Inter, sans-serif',
-                }}
               >
-                ← Back
+                <ChevronLeft size={14} strokeWidth={2.25} />
+                Back
               </button>
 
-              <div style={{ padding: '0 16px 12px' }}>
-                <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
-                  {ownerTractsName}
-                </div>
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, fontFamily: 'Inter, sans-serif' }}>
-                  {ownerTractsLoading
-                    ? 'Looking up tracts…'
-                    : `${ownerTracts.length} tract${ownerTracts.length !== 1 ? 's' : ''} found`}
+              <div className="mm-panel-head" style={{ marginTop: 10, alignItems: 'flex-start' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="mm-kicker">Owner</div>
+                  <div className="mm-panel-title" style={{ marginTop: 4 }}>{ownerTractsName}</div>
+                  <div className="mm-panel-sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {ownerTractsLoading ? (
+                      <>
+                        <span className="mm-spinner" /> Looking up tracts
+                      </>
+                    ) : (
+                      `${ownerTracts.length} tract${ownerTracts.length !== 1 ? 's' : ''} found`
+                    )}
+                  </div>
                 </div>
               </div>
 
               {ownerTracts.length > 0 && (
-                <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden', margin: '0 14px' }}>
+                <div className="mm-list mm-stagger" style={{ marginTop: 12 }}>
                   {ownerTracts.map((tract, i) => {
-                    const abstractLabel = tract.ABSTRACT_L ?? tract.abstract_label ?? 'Unknown'
+                    const abstractLabelForTract = tract.ABSTRACT_L ?? tract.abstract_label ?? 'Unknown'
                     const score = Number(tract.max_propensity_score ?? 0)
-                    const scoreColor = score >= 8 ? '#F44336' : score >= 5 ? '#FF9800' : score >= 2 ? '#8BC34A' : '#9E9E9E'
+                    const scoreColor =
+                      score >= 8 ? '#F44336' : score >= 5 ? '#FF9800' : score >= 2 ? '#8BC34A' : '#9E9E9E'
                     const operator = tract.top_operator ?? ''
                     return (
                       <div
-                        key={`${abstractLabel}-${i}`}
+                        key={`${abstractLabelForTract}-${i}`}
+                        className="mm-row"
                         onClick={() => {
                           setSelected(tract)
                           setOwnerSort('score')
@@ -2581,28 +2297,15 @@ export default function Home() {
                             nonce: Date.now(),
                           })
                         }}
-                        style={{
-                          padding: '10px 16px',
-                          cursor: 'pointer',
-                          borderBottom: i < ownerTracts.length - 1 ? '1px solid #F3F4F6' : 'none',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#F9FAFB' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ minWidth: 0, flex: 1, marginRight: 10 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#111827', fontFamily: 'Inter, sans-serif' }}>
-                              {abstractLabel}
-                            </div>
-                            <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2, fontFamily: 'Inter, sans-serif' }}>
-                              {operator}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor, fontFamily: 'monospace' }}>
-                            {score}/10
-                          </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="mm-row-title">{abstractLabelForTract}</div>
+                          <div className="mm-row-sub">{operator}</div>
                         </div>
+                        <span className="mm-score" style={{ color: scoreColor }}>
+                          {score}
+                          <small>/10</small>
+                        </span>
                       </div>
                     )
                   })}
@@ -2610,58 +2313,37 @@ export default function Home() {
               )}
 
               {!ownerTractsLoading && ownerTracts.length === 0 && (
-                <div style={{ padding: '16px', color: '#6B7280', fontSize: 12, fontFamily: 'Inter, sans-serif' }}>
-                  No mapped tracts found.
-                </div>
+                <div className="mm-card mm-empty" style={{ marginTop: 12 }}>No mapped tracts found.</div>
               )}
             </div>
           ) : (
-            <div>
-              <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: mapLevel === 'county' ? 4 : 16 }}>
-                {mapLevel === 'county' ? 'All Counties' : 'County Overview'}
-              </div>
-              {mapLevel === 'county' && (
-                <div style={{ color: '#6B7280', fontSize: 12, marginBottom: 16, fontFamily: 'Inter, sans-serif' }}>
-                  Click any highlighted county to explore
+            <div className="mm-enter" key={mapLevel}>
+              <div className="mm-panel-head" style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <div className="mm-kicker">{mapLevel === 'county' ? 'Coverage' : 'County overview'}</div>
+                  <div className="mm-panel-title" style={{ marginTop: 4 }}>{overviewTitle}</div>
+                  {mapLevel === 'county' && (
+                    <div className="mm-panel-sub">Select a highlighted county on the map or from the list below.</div>
+                  )}
                 </div>
-              )}
+              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mm-stagger" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {(mapLevel === 'county' ? combinedStats : countyStats).map((card) => (
-                  <div
-                    key={card.lbl}
-                    style={{
-                      background: '#FFFFFF',
-                      borderRadius: 8,
-                      border: '1px solid #E5E7EB',
-                      padding: '14px 16px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: '#111827',
-                        fontFamily: '"Times New Roman", Georgia, serif',
-                        fontSize: 24,
-                        fontWeight: 700,
-                        letterSpacing: '0.02em',
-                        fontVariantNumeric: 'tabular-nums lining-nums',
-                        fontFeatureSettings: '"tnum" 1, "lnum" 1',
-                      }}
-                    >
-                      {card.val}
-                    </div>
-                    <div style={{ color: '#6B7280', fontSize: 11, marginTop: 2, fontFamily: 'Inter, sans-serif' }}>{card.lbl}</div>
+                  <div key={card.lbl} className="mm-stat">
+                    <div className="mm-stat-value">{card.val}</div>
+                    <div className="mm-stat-label">{card.lbl}</div>
                   </div>
                 ))}
               </div>
 
               {mapLevel === 'county' && (
                 <>
-                  <div style={{ marginTop: 18, marginBottom: 10, fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif' }}>
-                    ACTIVE COUNTIES
+                  <div className="mm-kicker-row">
+                    <span className="mm-kicker">Active counties</span>
+                    <span className="mm-kicker mm-num" style={{ letterSpacing: 0 }}>{Object.keys(COUNTIES).length}</span>
                   </div>
-                  <div>
+                  <div className="mm-list mm-stagger">
                     {Object.values(COUNTIES).map((c) => {
                       const hotVal = Number(
                         (c.stats.find((s) => s.lbl === 'Hot (8-10)')?.val ?? '0').replace(/,/g, '')
@@ -2669,53 +2351,20 @@ export default function Home() {
                       return (
                         <div
                           key={c.id}
+                          className="mm-row"
                           onClick={() => {
                             setSelectedCounty(c.id as CountyKey)
                             setMapLevel('tract')
                           }}
-                          style={{
-                            background: '#FFFFFF',
-                            border: '1px solid #E5E7EB',
-                            borderRadius: 8,
-                            padding: 12,
-                            marginBottom: 8,
-                            cursor: 'pointer',
-                            transition: 'border-color 0.15s',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 10,
-                          }}
-                          onMouseEnter={(event) => {
-                            event.currentTarget.style.borderColor = '#EF9F27'
-                          }}
-                          onMouseLeave={(event) => {
-                            event.currentTarget.style.borderColor = '#E5E7EB'
-                          }}
                         >
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', fontFamily: 'Inter, sans-serif' }}>
-                              {c.displayName}
-                            </div>
-                            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2, fontFamily: 'Inter, sans-serif' }}>
-                              ~{c.totalLeads.toLocaleString()} total leads
+                            <div className="mm-row-title">{c.displayName}</div>
+                            <div className="mm-row-sub">
+                              <span className="mm-tabular">~{c.totalLeads.toLocaleString()}</span> total leads
                             </div>
                           </div>
-                          <div
-                            style={{
-                              background: 'rgba(220,38,38,0.1)',
-                              border: '1px solid rgba(220,38,38,0.25)',
-                              borderRadius: 999,
-                              padding: '3px 10px',
-                              color: '#DC2626',
-                              fontFamily: 'Inter, sans-serif',
-                              fontSize: 11,
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {hotVal.toLocaleString()} hot
-                          </div>
+                          <span className="mm-chip mm-chip-red mm-chip-dot mm-tabular">{hotVal.toLocaleString()} hot</span>
+                          <ChevronRight size={14} strokeWidth={2} style={{ color: '#9CA3AF', flexShrink: 0 }} />
                         </div>
                       )
                     })}
@@ -2724,100 +2373,71 @@ export default function Home() {
               )}
 
               {mapLevel === 'tract' && (
-              <>
-              <div style={{ marginTop: 18, marginBottom: 10, fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif' }}>
-                TOP 10 HOTTEST TRACTS
-              </div>
-              <div
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: 0,
-                  maxHeight: 340,
-                  overflowY: 'auto',
-                }}
-              >
-                {topTracts.map((tract, index) => (
-                  <div
-                    key={`${tract.abstract_label}-${tract.level1_sur}-${index}`}
-                    onClick={() => {
-                      setSelected(toTractSelection(tract))
-                      setOwnerSort('score')
-                      setExpandedOwner(null)
-                      trackEvent('tract_clicked', {
-                        abstract: tract.abstract_label,
-                        owner_count: tract.owner_count,
-                        max_score: tract.max_propensity_score,
-                      })
-                    }}
-                    style={{
-                      background: '#FFFFFF',
-                      border: '1px solid #E5E7EB',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      marginBottom: 6,
-                      cursor: 'pointer',
-                      transition: 'border-color 0.15s',
-                    }}
-                    onMouseEnter={(event) => {
-                      event.currentTarget.style.borderColor = '#EF9F27'
-                    }}
-                    onMouseLeave={(event) => {
-                      event.currentTarget.style.borderColor = '#E5E7EB'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1, marginRight: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>
-                          {tract.abstract_label}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
-                          {tract.level1_sur}
-                        </div>
-                        <div style={{ fontSize: 10, color: '#6B7280', marginTop: 4 }}>
-                          {tract.owner_count} owners · {tract.top_operator}
-                        </div>
-                      </div>
+                <>
+                  <div className="mm-kicker-row">
+                    <span className="mm-kicker">Top 10 hottest tracts</span>
+                  </div>
+                  <div className="mm-list mm-stagger" style={{ maxHeight: 360, overflowY: 'auto' }}>
+                    {topTracts.map((tract, index) => (
                       <div
-                        style={{
-                          background: '#F3F4F6',
-                          border: '1px solid #E5E7EB',
-                          borderRadius: 999,
-                          padding: '2px 8px',
-                          color: scoreBadgeColor(tract.max_propensity_score),
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: 11,
-                          fontWeight: 600,
+                        key={`${tract.abstract_label}-${tract.level1_sur}-${index}`}
+                        className="mm-row"
+                        onClick={() => {
+                          setSelected(toTractSelection(tract))
+                          setOwnerSort('score')
+                          setExpandedOwner(null)
+                          trackEvent('tract_clicked', {
+                            abstract: tract.abstract_label,
+                            owner_count: tract.owner_count,
+                            max_score: tract.max_propensity_score,
+                          })
                         }}
                       >
-                        {tract.max_propensity_score}/10
+                        <span className="mm-num" style={{ fontSize: 10.5, color: '#9CA3AF', width: 18, flexShrink: 0 }}>
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="mm-row-title">{tract.abstract_label}</div>
+                          <div className="mm-row-sub">{tract.level1_sur}</div>
+                          <div className="mm-row-sub" style={{ color: '#9CA3AF' }}>
+                            <span className="mm-tabular">{tract.owner_count}</span> owners, {tract.top_operator}
+                          </div>
+                        </div>
+                        <span
+                          className="mm-score-pill"
+                          style={{
+                            color: scoreBadgeColor(tract.max_propensity_score),
+                            borderColor: `${scoreBadgeColor(tract.max_propensity_score)}55`,
+                            background: `${scoreBadgeColor(tract.max_propensity_score)}12`,
+                          }}
+                        >
+                          {tract.max_propensity_score}/10
+                        </span>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <div style={{ marginTop: 18, marginBottom: 10, fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif' }}>
-                COUNTY BREAKDOWN
-              </div>
-              <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, padding: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                {countyBreakdown.map((row) => (
-                  <div key={row.operator} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                      <span style={{ color: '#111827' }}>{row.operator}</span>
-                      <span style={{ color: '#6B7280' }}>{row.pct}%</span>
-                    </div>
-                    <div style={{ height: 7, borderRadius: 4, background: '#F3F4F6' }}>
-                      <div style={{ width: `${row.pct}%`, height: 7, borderRadius: 4, background: '#EF9F27' }} />
-                    </div>
+                  <div className="mm-kicker-row">
+                    <span className="mm-kicker">Operator share</span>
                   </div>
-                ))}
-              </div>
-              </>
+                  <div className="mm-card mm-card-pad">
+                    {countyBreakdown.map((row, index) => (
+                      <div key={row.operator} style={{ marginBottom: index === countyBreakdown.length - 1 ? 0 : 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                          <span style={{ color: '#111827', fontWeight: 500 }}>{row.operator}</span>
+                          <span className="mm-num" style={{ color: '#6B7280' }}>{row.pct}%</span>
+                        </div>
+                        <div className="mm-meter">
+                          <span style={{ width: `${row.pct}%`, opacity: 1 - index * 0.18 }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           )}
-        </div>
+        </aside>
 
         {/* Map area */}
         <div
@@ -2827,89 +2447,52 @@ export default function Home() {
             minHeight: isMobile ? '48dvh' : 0,
             position: 'relative',
             order: isMobile ? 1 : 2,
+            background: '#F4F5F7',
           }}
         >
           {countySwitchLabel && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 12,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 10,
-                padding: '5px 12px',
-                borderRadius: 999,
-                background: 'rgba(239,159,39,0.14)',
-                border: '1px solid rgba(239,159,39,0.45)',
-                color: '#B45309',
-                fontSize: 11,
-                fontWeight: 600,
-                fontFamily: 'Inter, sans-serif',
-                opacity: countySwitchLabelVisible ? 1 : 0,
-                transition: 'opacity 0.25s ease',
-                pointerEvents: 'none',
-              }}
-            >
+            <div className="mm-float-pill" style={{ opacity: countySwitchLabelVisible ? 1 : 0 }}>
               {countySwitchLabel}
             </div>
           )}
           {showCountyArrows && previousCounty && (
             <button
+              type="button"
+              className="mm-map-arrow"
+              style={{ left: 10 }}
               onClick={() => switchCountyByOffset(-1)}
               aria-label={`Previous county: ${COUNTIES[previousCounty].name}`}
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: 8,
-                transform: 'translateY(-50%)',
-                zIndex: 10,
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                border: '1px solid #E5E7EB',
-                background: 'rgba(255,255,255,0.92)',
-                color: '#374151',
-                fontSize: 16,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
             >
-              ‹
+              <ChevronLeft size={16} strokeWidth={2.25} />
             </button>
           )}
           {showCountyArrows && nextCounty && (
             <button
+              type="button"
+              className="mm-map-arrow"
+              style={{ right: rightArrowOffset }}
               onClick={() => switchCountyByOffset(1)}
               aria-label={`Next county: ${COUNTIES[nextCounty].name}`}
-              style={{
-                position: 'absolute',
-                top: '50%',
-                right: rightArrowOffset,
-                transform: 'translateY(-50%)',
-                zIndex: 10,
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                border: '1px solid #E5E7EB',
-                background: 'rgba(255,255,255,0.92)',
-                color: '#374151',
-                fontSize: 16,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
             >
-              ›
+              <ChevronRight size={16} strokeWidth={2.25} />
             </button>
           )}
           {loading ? (
-            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#EF9F27', fontFamily: 'Inter, sans-serif' }}>
-              Loading...
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                color: '#6B7280',
+                fontSize: 12.5,
+              }}
+            >
+              <span className="mm-spinner" style={{ width: 22, height: 22 }} />
+              Loading county data
             </div>
           ) : (
             <MineralMap
@@ -2936,13 +2519,11 @@ export default function Home() {
                 // (stripped of `owners_json` to keep tile bytes small), so the
                 // props the click handler hands us only carry counts. Enrich
                 // by looking up the matching TractRecord from the full
-                // GeoJSON the side panel already loaded — that's the source
+                // GeoJSON the side panel already loaded, which is the source
                 // of truth for the owners list. Falls back to the raw slim
                 // props if no match is found (e.g. brand-new tracts that
                 // somehow haven't made it into `tracts` yet).
-                const clickedAbstract = String(
-                  tract.ABSTRACT_L ?? tract.abstract_label ?? ''
-                ).trim()
+                const clickedAbstract = String(tract.ABSTRACT_L ?? tract.abstract_label ?? '').trim()
                 const fullTract = clickedAbstract
                   ? tracts.find((t) => {
                       const t1 = String(t.abstract_label ?? '').trim()
@@ -2954,9 +2535,7 @@ export default function Home() {
                       return t1Bare === clickedBare
                     })
                   : undefined
-                const enriched = fullTract
-                  ? toTractSelection(fullTract)
-                  : (tract as TractSelection)
+                const enriched = fullTract ? toTractSelection(fullTract) : (tract as TractSelection)
                 setSelected(enriched)
                 setSelectedTractGeometry(
                   (tract.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon | undefined) ?? null
@@ -2976,159 +2555,127 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Bottom bar */}
-      <div
-        style={{
-          height: isMobile ? 58 : 44,
-          minHeight: isMobile ? 58 : 44,
-          background: '#FFFFFF',
-          borderTop: '1px solid #E5E7EB',
-          display: 'flex',
-          alignItems: 'center',
-          gap: isMobile ? 14 : 20,
-          padding: isMobile ? '0 10px' : '0 16px',
-          color: '#374151',
-          fontSize: 11,
-          boxShadow: '0 -1px 3px rgba(0,0,0,0.04)',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <span style={{ fontSize: 12, color: '#374151', fontFamily: 'Inter, sans-serif' }}>Motivated only</span>
-        <button
-          onClick={() => setMotivatedOnly((prev) => !prev)}
-          style={{
-            width: 32,
-            height: 18,
-            borderRadius: 9,
-            border: 'none',
-            background: motivatedOnly ? '#EF9F27' : '#D1D5DB',
-            position: 'relative',
-            cursor: 'pointer',
-          }}
-        >
-          <span
-            style={{
-              position: 'absolute',
-              top: 2,
-              left: motivatedOnly ? 14 : 2,
-              width: 14,
-              height: 14,
-              borderRadius: '50%',
-              background: '#fff',
-            }}
-          />
-        </button>
-
-        <span style={{ fontSize: 12, color: '#374151', fontFamily: 'Inter, sans-serif' }}>Out of state</span>
-        <button
-          onClick={() => setOutOfStateOnly((prev) => !prev)}
-          style={{
-            width: 32,
-            height: 18,
-            borderRadius: 9,
-            border: 'none',
-            background: outOfStateOnly ? '#EF9F27' : '#D1D5DB',
-            position: 'relative',
-            cursor: 'pointer',
-          }}
-        >
-          <span
-            style={{
-              position: 'absolute',
-              top: 2,
-              left: outOfStateOnly ? 14 : 2,
-              width: 14,
-              height: 14,
-              borderRadius: '50%',
-              background: '#fff',
-            }}
-          />
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: '#6B7280' }}>1%+ interest</span>
-          <div
-            onClick={() => setLargeInterestOnly(!largeInterestOnly)}
-            style={{
-              width: 32, height: 18, borderRadius: 9,
-              background: largeInterestOnly ? '#EF9F27' : '#E5E7EB',
-              cursor: 'pointer', position: 'relative', transition: 'background 0.2s'
-            }}
+      {/* Filter bar */}
+      <div className="mm-filterbar" style={{ minHeight: isMobile ? 56 : 44 }}>
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Filters</span>
+          <button
+            type="button"
+            className="mm-switch"
+            role="switch"
+            aria-checked={motivatedOnly}
+            onClick={() => setMotivatedOnly((prev) => !prev)}
           >
-            <div style={{
-              position: 'absolute', top: 2,
-              left: largeInterestOnly ? 16 : 2,
-              width: 14, height: 14, borderRadius: '50%',
-              background: '#fff', transition: 'left 0.2s',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-            }} />
+            <span className="mm-switch-track" />
+            Motivated only
+          </button>
+          <button
+            type="button"
+            className="mm-switch"
+            role="switch"
+            aria-checked={outOfStateOnly}
+            onClick={() => setOutOfStateOnly((prev) => !prev)}
+          >
+            <span className="mm-switch-track" />
+            Out of state
+          </button>
+          <button
+            type="button"
+            className="mm-switch"
+            role="switch"
+            aria-checked={largeInterestOnly}
+            onClick={() => setLargeInterestOnly(!largeInterestOnly)}
+          >
+            <span className="mm-switch-track" />
+            1%+ interest
+          </button>
+        </div>
+
+        <div className="mm-filter-sep" />
+
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Type</span>
+          <div className="mm-segment">
+            {(['all', 'individual', 'trust', 'company'] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                data-active={ownerTypeFilter === type}
+                onClick={() => setOwnerTypeFilter(type)}
+              >
+                {type === 'all' ? 'All' : type === 'individual' ? 'People' : type === 'trust' ? 'Trusts' : 'Companies'}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginRight: 16 }}>
-          <span style={{ fontSize: 12, color: '#374151', whiteSpace: 'nowrap', fontFamily: 'Inter, sans-serif' }}>Type:</span>
-          {(['all', 'individual', 'trust', 'company'] as const).map(type => (
-            <button
-              key={type}
-              onClick={() => setOwnerTypeFilter(type)}
-              style={{
-                fontSize: 10,
-                padding: '3px 10px',
-                borderRadius: 10,
-                cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif',
-                whiteSpace: 'nowrap',
-                background: ownerTypeFilter === type ? 'rgba(239,159,39,0.2)' : 'transparent',
-                border: ownerTypeFilter === type ? '1px solid rgba(239,159,39,0.6)' : '1px solid #E5E7EB',
-                color: ownerTypeFilter === type ? '#EF9F27' : '#6B7280',
-              }}
-            >
-              {type === 'all' ? 'All' : type === 'individual' ? 'People' : type === 'trust' ? 'Trusts' : 'Companies'}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginRight: 16 }}>
-          <span style={{ fontSize: 11, color: '#6B7280', marginRight: 4 }}>Tier:</span>
-          {(['all', 'hot', 'motivated', 'prospect', 'low'] as const).map(tier => {
-            const colors: Record<string, string> = {
-              hot: '#F44336', motivated: '#FF9800', prospect: '#81C784', low: '#9E9E9E', all: '#EF9F27'
-            }
-            return (
-              <button
-                key={tier}
-                onClick={() => setTierFilter(tier)}
-                style={{
-                  fontSize: 10, padding: '3px 10px', borderRadius: 10, cursor: 'pointer',
-                  fontFamily: 'monospace',
-                  background: tierFilter === tier ? `${colors[tier]}20` : 'transparent',
-                  border: tierFilter === tier ? `0.5px solid ${colors[tier]}` : '0.5px solid #E5E7EB',
-                  color: tierFilter === tier ? colors[tier] : '#6B7280',
-                }}
-              >
-                {tier === 'all' ? 'All' : tier.charAt(0).toUpperCase() + tier.slice(1)}
-              </button>
-            )
-          })}
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Tier</span>
+          <div className="mm-segment">
+            {(['all', 'hot', 'motivated', 'prospect', 'low'] as const).map((tier) => {
+              const colors: Record<string, string> = {
+                hot: '#F44336',
+                motivated: '#FF9800',
+                prospect: '#81C784',
+                low: '#9E9E9E',
+                all: '#111827',
+              }
+              return (
+                <button
+                  key={tier}
+                  type="button"
+                  data-active={tierFilter === tier}
+                  data-tone
+                  style={{ ['--tone' as string]: colors[tier] }}
+                  onClick={() => setTierFilter(tier)}
+                >
+                  {tier !== 'all' && (
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: colors[tier],
+                        marginRight: 5,
+                        verticalAlign: 'middle',
+                        position: 'relative',
+                        top: -1,
+                      }}
+                    />
+                  )}
+                  {tier === 'all' ? 'All' : tier.charAt(0).toUpperCase() + tier.slice(1)}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        <span style={{ fontSize: 12, color: '#374151', fontFamily: 'Inter, sans-serif' }}>Min score</span>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          value={minScore}
-          onChange={(event) => setMinScore(Number(event.target.value))}
-          style={{ width: 160, accentColor: '#EF9F27' }}
-        />
-        <span style={{ fontFamily: 'Inter, sans-serif', color: '#EF9F27', fontWeight: 600 }}>{minScore}</span>
+        <div className="mm-filter-sep" />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: '#6B7280' }}>Min NRA:</span>
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Min score</span>
+          <input
+            type="range"
+            className="mm-range"
+            min={0}
+            max={10}
+            value={minScore}
+            onChange={(event) => setMinScore(Number(event.target.value))}
+            style={{ ['--fill' as string]: `${minScore * 10}%` }}
+            aria-label="Minimum propensity score"
+          />
+          <span className="mm-num" style={{ color: '#B45309', fontWeight: 600, fontSize: 12, width: 16 }}>{minScore}</span>
+        </div>
+
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Min NRA</span>
           <select
+            className="mm-select mm-select-boxed"
             value={minNRA}
             onChange={(e) => setMinNRA(Number(e.target.value))}
-            style={{ fontSize: 11, border: '1px solid #E5E7EB', borderRadius: 6, padding: '2px 6px', background: '#fff', color: '#374151' }}
+            aria-label="Minimum net royalty acres"
+            style={{ height: 26 }}
           >
             <option value={0}>Any</option>
             <option value={0.1}>0.1+</option>
@@ -3141,183 +2688,93 @@ export default function Home() {
           </select>
         </div>
 
-        <span style={{ fontSize: 12, color: '#374151', fontFamily: 'Inter, sans-serif' }}>Layers:</span>
-        <button
-          onClick={() => setShowPermits((prev) => !prev)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: showPermits ? '#2563eb' : '#6B7280',
-            cursor: 'pointer',
-            fontSize: 11,
-            fontFamily: 'Inter, sans-serif',
-            padding: 0,
-          }}
-        >
-          ● New permits
-        </button>
+        <div className="mm-filter-sep" />
 
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Layers</span>
+          <button
+            type="button"
+            className={`mm-chip ${showPermits ? 'mm-chip-blue' : ''}`}
+            style={{ cursor: 'pointer', height: 24 }}
+            aria-pressed={showPermits}
+            onClick={() => setShowPermits((prev) => !prev)}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: showPermits ? '#2563EB' : '#D1D5DB',
+                boxShadow: showPermits ? '0 0 0 3px rgba(37,99,235,0.15)' : 'none',
+              }}
+            />
+            New permits
+          </button>
+        </div>
       </div>
 
       {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 60,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#FFFFFF',
-            border: toastType === 'error' ? '0.5px solid #F44336' : '0.5px solid #7AB835',
-            color: toastType === 'error' ? '#F44336' : '#7AB835',
-            fontSize: 12,
-            padding: '10px 20px',
-            borderRadius: 8,
-            fontFamily: 'Inter, sans-serif',
-            zIndex: 9999,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          }}
-        >
-          {toastType === 'error' ? '✕' : '✓'} {toast}
+        <div className="mm-toast" data-type={toastType} role="status">
+          <span className="mm-toast-icon">
+            {toastType === 'error' ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />}
+          </span>
+          {toast}
         </div>
       )}
 
       {showOnboarding && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 12,
-              width: 'min(520px, calc(100vw - 24px))',
-              boxShadow: '0 32px 80px rgba(0,0,0,0.25)',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                height: 3,
-                background: '#EF9F27',
-                width: `${((onboardingStep + 1) / ONBOARDING_STEPS.length) * 100}%`,
-                transition: 'width 0.3s ease',
-              }}
-            />
+        <div className="mm-scrim" style={{ zIndex: 9999 }}>
+          <div className="mm-dialog" style={{ maxWidth: 520 }} role="dialog" aria-modal="true">
+            <div className="mm-progress">
+              <span style={{ width: `${((onboardingStep + 1) / ONBOARDING_STEPS.length) * 100}%` }} />
+            </div>
 
-            <div style={{ padding: '36px 40px 32px' }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: '#9CA3AF',
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  marginBottom: 20,
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              >
-                Step {ONBOARDING_STEPS[onboardingStep].step} of {String(ONBOARDING_STEPS.length).padStart(2, '0')}
+            <div style={{ padding: '32px 36px 28px' }} key={onboardingStep} className="mm-enter">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                <span className="mm-kicker">
+                  Step {ONBOARDING_STEPS[onboardingStep].step} of {String(ONBOARDING_STEPS.length).padStart(2, '0')}
+                </span>
+                <div className="mm-step-dots" aria-hidden="true">
+                  {ONBOARDING_STEPS.map((step, index) => (
+                    <span key={step.step} data-active={index === onboardingStep} data-done={index < onboardingStep} />
+                  ))}
+                </div>
               </div>
 
               <h2
                 style={{
-                  fontFamily: 'Georgia, serif',
-                  fontSize: 24,
-                  fontWeight: 700,
+                  fontSize: 22,
+                  fontWeight: 600,
                   color: '#111827',
-                  marginBottom: 14,
-                  lineHeight: 1.2,
-                  letterSpacing: '-0.01em',
+                  marginBottom: 12,
+                  lineHeight: 1.25,
+                  letterSpacing: '-0.02em',
                 }}
               >
                 {ONBOARDING_STEPS[onboardingStep].title}
               </h2>
 
-              <p
-                style={{
-                  fontSize: 14,
-                  color: '#4B5563',
-                  lineHeight: 1.75,
-                  marginBottom: 36,
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              >
+              <p style={{ fontSize: 14, color: '#4B5563', lineHeight: 1.7, marginBottom: 30 }}>
                 {ONBOARDING_STEPS[onboardingStep].body}
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <button
-                  onClick={completeOnboarding}
-                  style={{
-                    fontSize: 12,
-                    color: '#9CA3AF',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontFamily: 'Inter, sans-serif',
-                    padding: 0,
-                  }}
-                >
+                <button type="button" className="mm-btn mm-btn-ghost" onClick={completeOnboarding}>
                   Skip tour
                 </button>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {onboardingStep > 0 && (
-                    <button
-                      onClick={() => setOnboardingStep((s) => s - 1)}
-                      style={{
-                        padding: '9px 20px',
-                        borderRadius: 7,
-                        fontSize: 13,
-                        background: 'transparent',
-                        border: '1px solid #E5E7EB',
-                        color: '#374151',
-                        cursor: 'pointer',
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: 500,
-                      }}
-                    >
+                    <button type="button" className="mm-btn mm-btn-secondary" onClick={() => setOnboardingStep((s) => s - 1)}>
                       Back
                     </button>
                   )}
                   {onboardingStep < ONBOARDING_STEPS.length - 1 ? (
-                    <button
-                      onClick={() => setOnboardingStep((s) => s + 1)}
-                      style={{
-                        padding: '9px 24px',
-                        borderRadius: 7,
-                        fontSize: 13,
-                        background: '#111827',
-                        border: 'none',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                        fontFamily: 'Inter, sans-serif',
-                      }}
-                    >
+                    <button type="button" className="mm-btn mm-btn-primary" onClick={() => setOnboardingStep((s) => s + 1)}>
                       Next
+                      <ChevronRight size={14} strokeWidth={2.25} />
                     </button>
                   ) : (
-                    <button
-                      onClick={completeOnboarding}
-                      style={{
-                        padding: '9px 24px',
-                        borderRadius: 7,
-                        fontSize: 13,
-                        background: '#EF9F27',
-                        border: 'none',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                        fontFamily: 'Inter, sans-serif',
-                      }}
-                    >
+                    <button type="button" className="mm-btn mm-btn-brand" onClick={completeOnboarding}>
                       Start prospecting
                     </button>
                   )}
@@ -3329,100 +2786,50 @@ export default function Home() {
       )}
 
       {pipelineCandidate && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1001,
-          }}
-        >
-          <div
-            style={{
-              background: '#FFFFFF',
-              border: '0.5px solid #E5E7EB',
-              borderRadius: 12,
-              padding: 24,
-              width: 360,
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 8 }}>
-              Add owner to pipeline
+        <div className="mm-scrim" style={{ zIndex: 1001 }}>
+          <div className="mm-dialog" style={{ maxWidth: 380 }} role="dialog" aria-modal="true">
+            <div className="mm-dialog-body">
+              <div className="mm-dialog-title">Add owner to pipeline</div>
+              <div className="mm-dialog-sub">{pipelineCandidate.owner_name}</div>
+
+              <div className="mm-label" style={{ marginTop: 20 }}>Label</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {(
+                  [
+                    { key: 'prospect', label: 'Prospect' },
+                    { key: 'hot', label: 'Hot' },
+                    { key: 'nurture', label: 'Nurture' },
+                    { key: 'not_interested', label: 'Not interested' },
+                  ] as Array<{ key: PipelineTag; label: string }>
+                ).map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className="mm-option"
+                    data-active={pipelineTag === option.key}
+                    onClick={() => setPipelineTag(option.key)}
+                  >
+                    <span className="mm-option-dot" />
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 14 }}>
-              {pipelineCandidate.owner_name}
-            </div>
-            <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 8 }}>
-              Label
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
-              {([
-                { key: 'prospect', label: 'Prospect' },
-                { key: 'hot', label: 'Hot' },
-                { key: 'nurture', label: 'Nurture' },
-                { key: 'not_interested', label: 'Not Interested' },
-              ] as Array<{ key: PipelineTag; label: string }>).map((option) => (
-                <button
-                  key={option.key}
-                  onClick={() => setPipelineTag(option.key)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    border:
-                      pipelineTag === option.key
-                        ? '0.5px solid rgba(55,138,221,0.8)'
-                        : '0.5px solid #E5E7EB',
-                    background:
-                      pipelineTag === option.key
-                        ? 'rgba(55,138,221,0.2)'
-                        : 'transparent',
-                    color: pipelineTag === option.key ? '#8CC4FF' : '#6B7280',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    fontFamily: 'Inter, sans-serif',
-                  }}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="mm-dialog-foot">
               <button
+                type="button"
+                className="mm-btn mm-btn-secondary"
+                disabled={pipelineSaving}
                 onClick={() => {
                   if (pipelineSaving) return
                   setPipelineCandidate(null)
                 }}
-                style={{
-                  flex: 1,
-                  padding: '9px',
-                  borderRadius: 6,
-                  background: 'transparent',
-                  border: '0.5px solid #E5E7EB',
-                  color: '#6B7280',
-                  fontSize: 12,
-                  cursor: pipelineSaving ? 'not-allowed' : 'pointer',
-                }}
               >
                 Cancel
               </button>
-              <button
-                onClick={handleAddToPipelineConfirm}
-                style={{
-                  flex: 1,
-                  padding: '9px',
-                  borderRadius: 6,
-                  background: 'rgba(55,138,221,0.2)',
-                  border: '0.5px solid rgba(55,138,221,0.8)',
-                  color: '#8CC4FF',
-                  fontSize: 12,
-                  cursor: pipelineSaving ? 'not-allowed' : 'pointer',
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              >
-                {pipelineSaving ? 'Saving...' : 'Add to pipeline'}
+              <button type="button" className="mm-btn mm-btn-primary" disabled={pipelineSaving} onClick={handleAddToPipelineConfirm}>
+                {pipelineSaving ? <span className="mm-spinner mm-spinner-light" /> : <Plus size={14} strokeWidth={2.5} />}
+                {pipelineSaving ? 'Saving' : 'Add to pipeline'}
               </button>
             </div>
           </div>
@@ -3430,156 +2837,97 @@ export default function Home() {
       )}
 
       {skipTracing && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              background: '#FFFFFF',
-              border: '0.5px solid #E5E7EB',
-              borderRadius: 12,
-              padding: '24px',
-              width: 320,
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#111827', marginBottom: 8 }}>
-              Skip trace this owner?
+        <div className="mm-scrim" style={{ zIndex: 1000 }}>
+          <div className="mm-dialog" style={{ maxWidth: 380 }} role="dialog" aria-modal="true">
+            <div className="mm-dialog-body">
+              <div className="mm-dialog-title">Skip trace this owner?</div>
+              <div className="mm-dialog-sub">{skipTracing.owner_name}</div>
+              <div className="mm-callout" style={{ marginTop: 16 }}>
+                Searches for a phone number and email address. Uses 1 skip trace credit from your monthly allowance.
+              </div>
+              <div className="mm-callout mm-callout-amber" style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span>Monthly limit</span>
+                <span className="mm-num" style={{ fontWeight: 600 }}>{SKIP_TRACE_LIMIT} traces, resets on the 1st</span>
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>
-              {skipTracing.owner_name}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: '#6B7280',
-                marginBottom: 20,
-                padding: '10px 12px',
-                background: '#FFFFFF',
-                borderRadius: 6,
-                lineHeight: 1.5,
-              }}
-            >
-              This will search for phone number and email address.
-              Uses 1 skip trace credit from your monthly allowance.
-              <br />
-              <br />
-              <span style={{ color: '#EF9F27' }}>
-                Monthly limit: {SKIP_TRACE_LIMIT} skip traces · resets on the 1st
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setSkipTracing(null)}
-                disabled={skipTraceLoading}
-                style={{
-                  flex: 1,
-                  padding: '9px',
-                  borderRadius: 6,
-                  background: 'transparent',
-                  border: '0.5px solid #E5E7EB',
-                  color: '#6B7280',
-                  fontSize: 12,
-                  cursor: skipTraceLoading ? 'not-allowed' : 'pointer',
-                }}
-              >
+            <div className="mm-dialog-foot">
+              <button type="button" className="mm-btn mm-btn-secondary" disabled={skipTraceLoading} onClick={() => setSkipTracing(null)}>
                 Cancel
               </button>
-              <button
-                onClick={handleSkipTraceConfirm}
-                disabled={skipTraceLoading}
-                style={{
-                  flex: 1, padding: '9px', borderRadius: 6,
-                  background: skipTraceLoading ? 'rgba(239,159,39,0.08)' : 'rgba(239,159,39,0.15)',
-                  border: '0.5px solid rgba(239,159,39,0.4)',
-                  color: '#EF9F27', fontSize: 12, cursor: skipTraceLoading ? 'not-allowed' : 'pointer',
-                  fontFamily: 'monospace'
-                }}
-              >
-                {skipTraceLoading ? 'Searching...' : 'Skip trace →'}
+              <button type="button" className="mm-btn mm-btn-brand" disabled={skipTraceLoading} onClick={handleSkipTraceConfirm}>
+                {skipTraceLoading ? <span className="mm-spinner" /> : <Phone size={14} strokeWidth={2.25} />}
+                {skipTraceLoading ? 'Searching' : 'Run skip trace'}
               </button>
             </div>
           </div>
         </div>
       )}
+
       {skipTraceResult && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div style={{
-            background: '#FFFFFF', borderRadius: 12, padding: '28px 32px',
-            width: 360, boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
-          }}>
-            <div style={{ fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 6 }}>
-              Skip Trace Complete
-            </div>
-            <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 20 }}>
-              {skipTraceResult.ownerName}
-            </div>
-
-            {skipTraceResult.cached && (
-              <div style={{ fontSize: 11, color: '#16a34a', marginBottom: 8 }}>
-                ✓ Retrieved from shared cache
+        <div className="mm-scrim" style={{ zIndex: 2000 }}>
+          <div className="mm-dialog" style={{ maxWidth: 400 }} role="dialog" aria-modal="true">
+            <div className="mm-dialog-body">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 8,
+                    background: '#DCFCE7',
+                    color: '#15803D',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Check size={15} strokeWidth={2.75} />
+                </span>
+                <div className="mm-dialog-title">Skip trace complete</div>
               </div>
-            )}
+              <div className="mm-dialog-sub">{skipTraceResult.ownerName}</div>
 
-            <div style={{ background: '#F8F8F8', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
-              {skipTraceResult.phone ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 16 }}>📞</span>
-                  <a href={`tel:${skipTraceResult.phone}`} style={{ fontSize: 14, color: '#111827', fontWeight: 500, textDecoration: 'none' }}>
-                    {skipTraceResult.phone}
-                  </a>
-                </div>
-              ) : (
-                <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 8 }}>No phone found</div>
+              {skipTraceResult.cached && (
+                <div className="mm-chip mm-chip-green" style={{ marginTop: 12 }}>Retrieved from shared cache</div>
               )}
-              {skipTraceResult.email ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>✉️</span>
-                  <a href={`mailto:${skipTraceResult.email}`} style={{ fontSize: 14, color: '#111827', fontWeight: 500, textDecoration: 'none' }}>
-                    {skipTraceResult.email}
-                  </a>
+
+              <div className="mm-card" style={{ marginTop: 16, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '1px solid #F3F4F6' }}>
+                  <span style={{ color: '#9CA3AF', display: 'inline-flex' }}>
+                    <Phone size={15} strokeWidth={2} />
+                  </span>
+                  {skipTraceResult.phone ? (
+                    <a href={`tel:${skipTraceResult.phone}`} className="mm-num" style={{ fontSize: 14, color: '#111827', fontWeight: 500, textDecoration: 'none' }}>
+                      {skipTraceResult.phone}
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 13, color: '#9CA3AF' }}>No phone found</span>
+                  )}
                 </div>
-              ) : (
-                <div style={{ fontSize: 13, color: '#9CA3AF' }}>No email found</div>
-              )}
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px' }}>
+                  <span style={{ color: '#9CA3AF', display: 'inline-flex' }}>
+                    <Mail size={15} strokeWidth={2} />
+                  </span>
+                  {skipTraceResult.email ? (
+                    <a href={`mailto:${skipTraceResult.email}`} style={{ fontSize: 14, color: '#111827', fontWeight: 500, textDecoration: 'none', overflowWrap: 'anywhere' }}>
+                      {skipTraceResult.email}
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 13, color: '#9CA3AF' }}>No email found</span>
+                  )}
+                </div>
+              </div>
 
-            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 20 }}>
-              Contact info saved to pipeline. View and manage this lead in the CRM.
+              <div style={{ fontSize: 12.5, color: '#6B7280', marginTop: 14, lineHeight: 1.5 }}>
+                Contact info saved to pipeline. View and manage this lead in the CRM.
+              </div>
             </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setSkipTraceResult(null)}
-                style={{
-                  flex: 1, padding: '10px', borderRadius: 8,
-                  background: 'transparent', border: '1px solid #E5E7EB',
-                  color: '#6B7280', fontSize: 13, cursor: 'pointer'
-                }}
-              >
+            <div className="mm-dialog-foot">
+              <button type="button" className="mm-btn mm-btn-secondary" onClick={() => setSkipTraceResult(null)}>
                 Stay here
               </button>
-              <button
-                onClick={() => window.location.href = '/crm'}
-                style={{
-                  flex: 1, padding: '10px', borderRadius: 8,
-                  background: '#EF9F27', border: 'none',
-                  color: '#fff', fontSize: 13, cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Go to CRM →
+              <button type="button" className="mm-btn mm-btn-brand" onClick={() => (window.location.href = '/crm')}>
+                Open CRM
+                <ChevronRight size={14} strokeWidth={2.25} />
               </button>
             </div>
           </div>
