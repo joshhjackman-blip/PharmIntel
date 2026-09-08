@@ -156,14 +156,14 @@ export default function TractSearch({ map, geojsonUrl, onTractSelect }: TractSea
   };
 
   return (
-    <div ref={containerRef} className="absolute top-4 left-4 z-10 w-72">
-      <div className="relative">
-        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+    <div ref={containerRef} className="absolute top-3 left-3 z-10 w-72">
+      <div className="mm-search-field" style={{ background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(6px)', boxShadow: 'var(--mm-shadow-2)' }}>
+        <span className="mm-search-icon">
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
           </svg>
-        </div>
+        </span>
         <input
           ref={inputRef}
           type="text"
@@ -171,48 +171,39 @@ export default function TractSearch({ map, geojsonUrl, onTractSelect }: TractSea
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => query && results.length > 0 && setOpen(true)}
-          placeholder={loading ? "Loading tracts..." : "Search tracts (A-361, T&P RR CO...)"}
+          placeholder={loading ? "Loading tracts" : "Search tracts (A-361, T&P RR CO)"}
           disabled={loading}
-          className="
-            w-full pl-9 pr-8 py-2.5
-            bg-[#1a1a2e] border border-gray-700
-            rounded-lg text-sm text-white placeholder-gray-500
-            focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30
-            shadow-lg disabled:opacity-50
-          "
+          aria-label="Search tracts"
         />
         {query && (
           <button
+            type="button"
             onClick={() => { setQuery(""); setResults([]); setOpen(false); inputRef.current?.focus(); }}
-            className="absolute inset-y-0 right-2.5 flex items-center text-gray-500 hover:text-gray-300"
+            className="mm-btn mm-btn-ghost mm-btn-icon mm-btn-xs"
+            aria-label="Clear tract search"
+            style={{ width: 22 }}
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" viewBox="0 0 24 24">
+              <path d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         )}
       </div>
 
       {open && (
-        <div className="
-          mt-1 w-full bg-[#1a1a2e] border border-gray-700
-          rounded-lg shadow-xl overflow-hidden max-h-64 overflow-y-auto
-        ">
+        <div className="mm-popover" style={{ maxHeight: 260, overflowY: 'auto' }}>
           {results.map((tract, i) => (
             <button
+              type="button"
               key={`${tract.abstract_l}-${i}`}
               onClick={() => handleSelect(tract)}
-              className="
-                w-full px-3 py-2.5 text-left
-                hover:bg-gray-800 transition-colors
-                border-b border-gray-800 last:border-0
-                flex items-center gap-3
-              "
+              className="mm-popover-row"
+              style={{ width: '100%', border: 'none', background: 'none', textAlign: 'left', justifyContent: 'flex-start', padding: '8px 12px' }}
             >
-              <span className="shrink-0 text-xs font-mono font-semibold bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">
+              <span className="mm-chip mm-chip-amber mm-num" style={{ flexShrink: 0 }}>
                 {tract.abstract_l}
               </span>
-              <span className="text-sm text-gray-200 truncate">
+              <span className="mm-row-title" style={{ fontWeight: 500 }}>
                 {tract.abstract_n || tract.level1_sur || "-"}
               </span>
             </button>
