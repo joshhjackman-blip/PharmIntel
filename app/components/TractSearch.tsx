@@ -213,7 +213,7 @@ export default function TractSearch({ map, geojsonUrl, onTractSelect }: TractSea
                 {tract.abstract_l}
               </span>
               <span className="text-sm text-gray-200 truncate">
-                {tract.abstract_n || tract.level1_sur || "—"}
+                {tract.abstract_n || tract.level1_sur || "-"}
               </span>
             </button>
           ))}

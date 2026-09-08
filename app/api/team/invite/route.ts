@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         <div style="font-family: Georgia, serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
           <h1 style="font-size: 24px; color: #111827; margin-bottom: 16px;">You've been invited to Mineral Map</h1>
           <p style="font-size: 15px; color: #4B5563; line-height: 1.7; margin-bottom: 24px;">
-            A teammate has invited you to join their Mineral Map account —
+            A teammate has invited you to join their Mineral Map account,
             the Eagle Ford mineral rights prospecting platform.
           </p>
           <a href="${inviteUrl}" style="display: inline-block; background: #EF9F27; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-family: Inter, sans-serif; font-weight: 600; font-size: 14px;">

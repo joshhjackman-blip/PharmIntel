@@ -440,7 +440,7 @@ export default function DemoPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF9F27', display: 'inline-block' }} />
           <span style={{ fontSize: 11, letterSpacing: '0.09em', fontWeight: 700, color: '#111827' }}>MINERAL MAP</span>
-          <span style={{ color: '#9CA3AF', fontSize: 11 }}>·</span>
+          <span style={{ width: 1, height: 12, background: '#E5E7EB', display: 'inline-block' }} />
           <span style={{ fontSize: 11, color: '#6B7280' }}>Gonzales County, TX</span>
         </div>
         <span style={{ fontSize: 11, color: '#9CA3AF' }}>Demo Mode</span>
@@ -462,7 +462,7 @@ export default function DemoPage() {
           padding: '0 10px',
         }}
       >
-        Interactive demo — owner names anonymized; some features are intentionally omitted. Sign up at getmineralmap.com to access real data.
+        Interactive demo. Owner names are anonymized and some features are intentionally omitted. Sign up at getmineralmap.com to access real data.
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -491,7 +491,7 @@ export default function DemoPage() {
                   fontFamily: 'Inter, sans-serif',
                 }}
               >
-                ← Back
+                Back
               </button>
 
               <div style={{ fontSize: 18, fontFamily: 'Georgia, serif', color: '#111827', fontWeight: 700 }}>
@@ -805,7 +805,7 @@ export default function DemoPage() {
                                     color: inPipeline ? '#7AB835' : '#B45309',
                                   }}
                                 >
-                                  {inPipeline ? '✓ In pipeline' : '+ Add to pipeline'}
+                                  {inPipeline ? 'In pipeline' : '+ Add to pipeline'}
                                 </button>
                                 <button
                                   onClick={(e) => {
@@ -850,7 +850,7 @@ export default function DemoPage() {
                                 <div style={{ color: '#2563EB', fontSize: 11, marginTop: 2 }}>{owner.email}</div>
                                 <div style={{ marginTop: 6, fontSize: 10, color: '#9CA3AF' }}>
                                   <Link href="/pricing" style={{ color: '#9CA3AF', textDecoration: 'none' }}>
-                                    Sign up to skip trace real owners →
+                                    Sign up to skip trace real owners
                                   </Link>
                                 </div>
                               </div>
@@ -898,7 +898,7 @@ export default function DemoPage() {
               </div>
 
               <div style={{ marginTop: 24, textAlign: 'center', fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>
-                Click any tract on the map to see ranked owners →
+                Click any tract on the map to see ranked owners
               </div>
             </div>
           )}

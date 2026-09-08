@@ -383,10 +383,10 @@ export default function Comps() {
             <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Market Benchmarks</div>
             <div className="space-y-3">
               {[
-                { label: 'EOG Core — Producing', val: '4× – 5×', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-                { label: 'Baytex — Producing', val: '3× – 4×', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-                { label: 'Declining Production', val: '2× – 3×', color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
-                { label: 'Shut-in', val: '1× – 2×', color: 'text-gray-600', bg: 'bg-gray-50 border-gray-200' },
+                { label: 'EOG Core, Producing', val: '4x to 5x', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+                { label: 'Baytex, Producing', val: '3x to 4x', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+                { label: 'Declining Production', val: '2x to 3x', color: 'text-orange-700', bg: 'bg-orange-50 border-orange-200' },
+                { label: 'Shut-in', val: '1x to 2x', color: 'text-gray-600', bg: 'bg-gray-50 border-gray-200' },
               ].map((m) => (
                 <div key={m.label} className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${m.bg}`}>
                   <span className={`text-xs font-medium ${m.color}`}>{m.label}</span>
@@ -404,7 +404,7 @@ export default function Comps() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="font-serif text-xl font-bold text-gray-900">Eagle Ford Transactions</h2>
-              <p className="text-sm text-gray-400 mt-1">{comps.length} reference transactions · Gonzales County</p>
+              <p className="text-sm text-gray-400 mt-1">{comps.length} reference transactions in Gonzales County</p>
             </div>
             <button
               onClick={() => setShowForm(!showForm)}
@@ -468,15 +468,15 @@ export default function Comps() {
               <tbody className="divide-y divide-gray-100">
                 {comps.map((comp) => (
                   <tr key={comp.id} className={`hover:bg-gray-50 transition-colors ${comp.source === 'market' ? 'bg-blue-50/30' : 'bg-white'}`}>
-                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{comp.close_date ? new Date(comp.close_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 font-medium whitespace-nowrap">{comp.operator_name || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{comp.acreage || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{comp.nri || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{comp.monthly_royalty ? `$${Number(comp.monthly_royalty).toLocaleString()}` : '—'}</td>
-                    <td className="px-4 py-3 text-sm font-bold text-gray-900">{comp.sale_price ? `$${Number(comp.sale_price).toLocaleString()}` : '—'}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-amber-600">{comp.royalty_multiple ? `${Number(comp.royalty_multiple).toFixed(1)}×` : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{comp.price_per_nri_acre ? `$${Math.round(Number(comp.price_per_nri_acre)).toLocaleString()}` : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{comp.notes || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{comp.close_date ? new Date(comp.close_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 font-medium whitespace-nowrap">{comp.operator_name || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{comp.acreage || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{comp.nri || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{comp.monthly_royalty ? `$${Number(comp.monthly_royalty).toLocaleString()}` : '-'}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-gray-900">{comp.sale_price ? `$${Number(comp.sale_price).toLocaleString()}` : '-'}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-amber-600">{comp.royalty_multiple ? `${Number(comp.royalty_multiple).toFixed(1)}x` : '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{comp.price_per_nri_acre ? `$${Math.round(Number(comp.price_per_nri_acre)).toLocaleString()}` : '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{comp.notes || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${comp.source === 'market' ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
                         {comp.source === 'market' ? 'Reference' : 'Closed deal'}

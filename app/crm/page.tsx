@@ -839,7 +839,7 @@ export default function CRM() {
                   <TagBadge tag={deal.tag ?? 'prospect'} />
                 </div>
                 <div className="text-xs text-gray-400 mb-1">
-                  {deal.tract_abstract ?? '--'} · {deal.operator_name ?? '--'}
+                  {deal.tract_abstract ?? '--'}, {deal.operator_name ?? '--'}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-400">
                   {deal.mailing_city && <span>{deal.mailing_city}, {deal.mailing_state}</span>}
@@ -1217,7 +1217,7 @@ export default function CRM() {
                 <div className="p-4 border-b border-gray-100">
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Quick Actions</div>
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {['Called — no answer', 'Called — spoke', 'Left voicemail', 'Sent letter', 'Sent email', 'Met in person'].map(method => (
+                    {['Called, no answer', 'Called, spoke', 'Left voicemail', 'Sent letter', 'Sent email', 'Met in person'].map(method => (
                       <button
                         key={method}
                         onClick={() => {
@@ -1362,7 +1362,7 @@ export default function CRM() {
                 onClick={async () => {
                   if (!editingDeal) return
                   const entry = logNote.trim()
-                    ? `${logModal.method} — ${logNote.trim()}`
+                    ? `${logModal.method}: ${logNote.trim()}`
                     : logModal.method
                   const loggedAt = new Date().toISOString()
                   await supabase.from('contact_log').insert({
@@ -1446,7 +1446,7 @@ export default function CRM() {
                     />
                   )}
                   {generatingDoc
-                    ? 'Generating…'
+                    ? 'Generating'
                     : showFullPackageModal
                       ? 'Download PSA & Continue'
                       : 'Download PSA'}
@@ -1778,7 +1778,7 @@ export default function CRM() {
                 }}
                 className="text-xs font-medium text-amber-700 hover:text-amber-800"
               >
-                Save buyer as default →
+                Save buyer as default
               </button>
               <div className="text-xs text-gray-400">Click any blue field to edit</div>
             </div>
@@ -1816,7 +1816,7 @@ export default function CRM() {
                       aria-hidden
                     />
                   )}
-                  {generatingDoc ? 'Generating…' : 'Download Deed'}
+                  {generatingDoc ? 'Generating' : 'Download Deed'}
                 </button>
               </div>
             </div>
@@ -2036,7 +2036,7 @@ export default function CRM() {
                 }}
                 className="text-xs font-medium text-amber-700 hover:text-amber-800"
               >
-                Save grantee as default →
+                Save grantee as default
               </button>
               <div className="text-xs text-gray-400">Click any blue field to edit</div>
             </div>

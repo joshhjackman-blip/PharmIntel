@@ -196,7 +196,7 @@ export default function Account() {
                     month: 'long',
                     year: 'numeric',
                   })
-                  : '—'}
+                  : '-'}
               </div>
             </div>
           </div>
@@ -212,8 +212,8 @@ export default function Account() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <div className="font-serif text-base font-bold text-gray-900 mb-1">Mineral Map · $300/mo</div>
-                  <div className="text-sm text-gray-400">Eagle Ford Basin · Gonzales County</div>
+                  <div className="font-serif text-base font-bold text-gray-900 mb-1">Mineral Map, $300/mo</div>
+                  <div className="text-sm text-gray-400">Eagle Ford Basin, Gonzales County</div>
                 </div>
                 <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${statusColor}`}>
                   {subscription.status === 'active'
@@ -253,7 +253,7 @@ export default function Account() {
               <div className="text-sm text-gray-500 mb-4">No active subscription.</div>
               <Link href="/pricing" className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors">
                 <CreditCard size={14} />
-                Subscribe — $300/mo
+                Subscribe for $300/mo
               </Link>
             </div>
           )}
@@ -304,7 +304,7 @@ export default function Account() {
                 }}
                 className="ml-6 shrink-0 px-5 py-2.5 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 transition-colors"
               >
-                Upgrade — $499/mo
+                Upgrade for $499/mo
               </button>
             </div>
           </div>

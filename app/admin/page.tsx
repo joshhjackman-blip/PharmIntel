@@ -145,7 +145,7 @@ export default function AdminDashboard() {
                 <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest">{s.label}</div>
                 {s.icon}
               </div>
-              <div className="font-serif text-3xl font-bold text-gray-900">{loading ? '—' : s.val}</div>
+              <div className="font-serif text-3xl font-bold text-gray-900">{loading ? '-' : s.val}</div>
             </div>
           ))}
         </div>
@@ -156,14 +156,14 @@ export default function AdminDashboard() {
               Monthly Recurring Revenue
             </div>
             <div className="font-serif text-4xl font-bold text-white">
-              ${loading ? '—' : (stats.activeSubscribers * 300).toLocaleString()}
+              ${loading ? '-' : (stats.activeSubscribers * 300).toLocaleString()}
             </div>
-            <div className="text-sm text-gray-400 mt-1">{stats.activeSubscribers} active × $300/mo</div>
+            <div className="text-sm text-gray-400 mt-1">{stats.activeSubscribers} active x $300/mo</div>
           </div>
           <div className="text-right">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">ARR</div>
             <div className="font-serif text-2xl font-bold text-amber-400">
-              ${loading ? '—' : (stats.activeSubscribers * 300 * 12).toLocaleString()}
+              ${loading ? '-' : (stats.activeSubscribers * 300 * 12).toLocaleString()}
             </div>
           </div>
         </div>
@@ -239,7 +239,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="px-5 py-3 text-sm text-gray-500">{user.skip_traces ?? 0}</td>
-                      <td className="px-5 py-3 text-sm text-gray-500">{user.is_admin ? '✓' : '—'}</td>
+                      <td className="px-5 py-3 text-sm text-gray-500">{user.is_admin ? 'Yes' : 'No'}</td>
                     </tr>
                   ))}
                 </tbody>
