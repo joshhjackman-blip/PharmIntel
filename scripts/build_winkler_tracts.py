@@ -46,8 +46,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # Explicit abstract, e.g. "A-56", "A 1739". Bare "AB 935" form (Reagan) does
 # not occur in Winkler, so require the leading "A".
 _ABS = re.compile(r"\bA[-\s]?(\d{1,4})\b")
-# Section: "SEC 15", "SECTION 15", "SECT 15".
-_SEC = re.compile(r"\bSEC(?:TION|T)?\.?\s*(\d{1,3})\b")
+# Section: "SEC 15", "SECTION 15", "SECT 15". Trailing non-digit is allowed
+# ("SEC 39E/2" -> 39) via a negative digit lookahead instead of \b.
+_SEC = re.compile(r"\bSEC(?:TION|T)?\.?\s*(\d{1,3})(?![0-9])")
+# University-Lands sec-first grid: "SEC 12 20" / "SEC 1 21" — the block is the
+# bare number (or B-/letter block) right after the section, with no PSL anchor.
+_SEC_FIRST = re.compile(r"^SEC(?:TION|T)?\.?\s+\d{1,3}\s+(\d{1,3}|B-?\d+|[A-Z]-?\d*)\b")
 # T&P-style block-township, e.g. "45-2N" / "46T1N".
 _BLK_TWN = re.compile(r"\b(\d{1,3})[-\s]?(T?\d+[NS])\b")
 # Explicit "BLK <x>" / "BLOCK <x>" token.
@@ -131,9 +135,19 @@ def parse(legal: str):
             if trailing:
                 sec = trailing[-1]
         elif sec and not block and small:
+            # Prefer a number that differs from the section, but a lone number
+            # equal to the section is still the block (Section N of Block N),
+            # e.g. "1372 26 PSL SEC 26".
             cand = [n for n in small if n != sec]
-            if cand:
-                block = cand[0]
+            block = cand[0] if cand else small[0]
+
+    # University-Lands sec-first grid ("SEC 12 20"): block is the token right
+    # after the section when nothing else supplied one.
+    if sec and not block:
+        m = _SEC_FIRST.match(u)
+        if m:
+            tok = m.group(1).upper()
+            block = ("B" + tok[1:].lstrip("-") if tok.startswith("B") and tok[1:].lstrip("-").isdigit() else tok)
 
     if abstract:
         return (f"A:{abstract}", abstract, block, twn, sec, surveyor or "")
