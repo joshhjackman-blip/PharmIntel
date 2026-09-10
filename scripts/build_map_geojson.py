@@ -85,8 +85,15 @@ def build_legal_desc(props: dict) -> str:
       identifier — emits "COOK, W H A-160" instead.
     """
     abstract_l = _clean(props.get('ABSTRACT_L'))
+    # Only bare numeric abstracts get the "A-" prefix. Winkler grid tracts use
+    # a "B<block>-S<section>" key that is not an abstract — leave it out of the
+    # label (the block/section below carry the identifier instead).
+    is_grid_key = bool(re.match(r'^B.*-S', abstract_l.upper())) if abstract_l else False
     if abstract_l and not abstract_l.upper().startswith('A-'):
-        abstract_l = f'A-{abstract_l}'
+        if re.fullmatch(r'\d+', abstract_l):
+            abstract_l = f'A-{abstract_l}'
+        elif is_grid_key:
+            abstract_l = ''
 
     block_raw = _clean(props.get('Block') or props.get('BLOCK') or props.get('LEVEL2_BLO'))
     section = _clean(props.get('Surv_Sect') or props.get('LEVEL3_SUR'))
@@ -110,6 +117,17 @@ def build_legal_desc(props: dict) -> str:
             parts.append(abstract_l)
         return ' '.join(parts)
 
+    # Winkler PSL grid (no T&P township, no numeric abstract): render
+    # "PSL BLK 26 SEC 39" from the block/section. Gated on the grid-key shape
+    # so the existing abstract counties keep their survey+abstract label.
+    if is_grid_key and block_number and section:
+        parts = []
+        if survey:
+            parts.append(survey)
+        parts.append(f'BLK {block_number}')
+        parts.append(f'SEC {section}')
+        return ' '.join(parts)
+
     # Fallback (Gonzales-style): survey name + abstract label.
     if survey and abstract_l:
         return f'{survey} {abstract_l}'
@@ -124,6 +142,7 @@ INPUT_OUTPUT_PAIRS = [
     ('public/reagan_parcels_enriched.geojson',   'public/reagan_parcels_map.geojson'),
     ('public/upton_parcels_enriched.geojson',    'public/upton_parcels_map.geojson'),
     ('public/ward_parcels_enriched.geojson',     'public/ward_parcels_map.geojson'),
+    ('public/winkler_parcels_enriched.geojson',  'public/winkler_parcels_map.geojson'),
 ]
 
 

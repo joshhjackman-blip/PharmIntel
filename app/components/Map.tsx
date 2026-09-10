@@ -581,7 +581,6 @@ export default function Map({
     { name: 'GLASSCOCK', fips: '48173', mapCenter: [-101.52, 31.87] },
     { name: 'CRANE',     fips: '48103', mapCenter: [-102.55, 31.40] },
     { name: 'PECOS',     fips: '48371', mapCenter: [-102.72, 30.87] },
-    { name: 'WINKLER',   fips: '48495', mapCenter: [-103.05, 31.85] },
     { name: 'REEVES',    fips: '48389', mapCenter: [-103.68, 31.30] },
   ]
 

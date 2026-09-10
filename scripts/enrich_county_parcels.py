@@ -61,7 +61,61 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("COUNTY_PUBLIC_DIR", "public"),
         help="Directory to copy the enriched GeoJSON into for the web app.",
     )
+    parser.add_argument(
+        "--owners-csv",
+        default=os.getenv("COUNTY_INPUT_OWNERS"),
+        help=(
+            "Optional path to the owners CSV/XLSX. When provided, owners are "
+            "parsed offline from this file (via load_county_mineral_records."
+            "build_payload) instead of read from Supabase. Lets a county be "
+            "enriched before its <county>_mineral_ownership table exists."
+        ),
+    )
+    parser.add_argument(
+        "--county-display",
+        default=None,
+        help="Display value for the 'county' column (offline mode). Defaults to capitalized county id.",
+    )
+    parser.add_argument(
+        "--spatial-only",
+        action="store_true",
+        help=(
+            "Skip abstract text-matching (AbstractMatcher + owner.abstract -> "
+            "parcel code) and attach every owner to its tract purely by a "
+            "lat/lon point-in-polygon join keyed on ABSTRACT_L. Use for "
+            "counties whose tracts are a block/section grid with no numeric "
+            "abstract (e.g. Winkler PSL), where the abstract path mis-buckets "
+            "owners into the few named-abstract tracts."
+        ),
+    )
     return parser.parse_args()
+
+
+def load_owners_from_csv(csv_path: str, county_display: str) -> list[dict[str, Any]]:
+    """Build the owner list from a raw CSV without touching Supabase.
+
+    Reuses the exact parsing in scripts/load_county_mineral_records.py so the
+    offline enrichment matches what the DB load would produce (abstract,
+    ownership_pct as a raw 0-1 decimal, raw_record with lat/long, etc.).
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import load_county_mineral_records as lcr
+
+    rows = lcr.read_input(Path(csv_path))
+    if not rows:
+        return []
+    column_lookup = {lcr.normalize_header(c): c for c in rows[0].keys()}
+    owners: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        payload = lcr.build_payload(
+            row, county_display=county_display, column_lookup=column_lookup
+        )
+        payload["id"] = index
+        state = (payload.get("mailing_state") or "").upper()
+        payload["out_of_state"] = bool(state) and state not in {"TX", "TEXAS"}
+        owners.append(payload)
+    print(f"Parsed {len(owners):,} owners offline from {csv_path}")
+    return owners
 
 
 ARGS = parse_args()
@@ -193,15 +247,20 @@ def paginate_motivated_owners(client: Client) -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    supabase_url = require_env("SUPABASE_URL", ("NEXT_PUBLIC_SUPABASE_URL",))
-    supabase_key = require_env(
-        "SUPABASE_KEY",
-        ("SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-    )
-    client = create_client(supabase_url, supabase_key)
-
-    # 1) Fetch all motivated owners with pagination
-    all_owners = paginate_motivated_owners(client)
+    # 1) Fetch all owners — offline from a CSV when --owners-csv is given
+    #    (used to enrich a county before its Supabase table exists), else
+    #    paginate the live <county>_mineral_ownership table.
+    if ARGS.owners_csv:
+        county_display = ARGS.county_display or COUNTY_ID.capitalize()
+        all_owners = load_owners_from_csv(ARGS.owners_csv, county_display)
+    else:
+        supabase_url = require_env("SUPABASE_URL", ("NEXT_PUBLIC_SUPABASE_URL",))
+        supabase_key = require_env(
+            "SUPABASE_KEY",
+            ("SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+        )
+        client = create_client(supabase_url, supabase_key)
+        all_owners = paginate_motivated_owners(client)
 
     # 2) Load parcels and normalize Howard-specific abstract fields
     input_parcels_path = resolve_input_parcels_path()
@@ -224,9 +283,20 @@ def main() -> None:
             lambda code: f"A-{code}" if code else ""
         )
     elif "ABSTRACT_L" in parcels_gdf.columns:
-        parcels_gdf["ABSTRACT_N"] = parcels_gdf["ABSTRACT_L"].apply(
-            lambda label: re.sub(r"^A-", "", str(label or ""), flags=re.IGNORECASE).strip()
-        )
+        # Only real "A-<abstract>" labels carry a numeric ABSTRACT_N. Grid
+        # tracts (Winkler PSL) use a "B<block>-S<section>" ABSTRACT_L with no
+        # abstract number — deriving ABSTRACT_N by blindly stripping "A-" would
+        # leave the whole grid key in ABSTRACT_N, which then gets re-prefixed
+        # to "A-B..-S.." and mismatches the ABSTRACT_L used for the owner
+        # lookup (every prior county's ABSTRACT_L starts with "A-", so their
+        # behavior is unchanged).
+        def _derive_abstract_n(label: Any) -> str:
+            text = str(label or "").strip()
+            if text.upper().startswith("A-"):
+                return re.sub(r"^A-", "", text, flags=re.IGNORECASE).strip()
+            return ""
+
+        parcels_gdf["ABSTRACT_N"] = parcels_gdf["ABSTRACT_L"].apply(_derive_abstract_n)
         parcels_gdf["ABSTRACT_L"] = parcels_gdf["ABSTRACT_L"].apply(
             lambda label: str(label or "").strip()
         )
@@ -280,13 +350,21 @@ def main() -> None:
     code_to_abstract_label: dict[str, str] = {}
     for _, row in parcels_gdf.iterrows():
         code = to_abstract_code(row.get("CODE")) or to_abstract_code(row.get("ABSTRACT_N"))
-        if not code:
+        # Grid tracts (Winkler PSL) carry no numeric abstract. geopandas
+        # round-trips their empty ABSTRACT_N through the shapefile as the
+        # literal string "nan"/"none"; guard against it so every grid tract
+        # doesn't collapse into a single bogus "A-nan" bucket.
+        if not code or code.strip().lower() in {"nan", "none"}:
             continue
         code_to_abstract_label[code] = f"A-{code}"
 
     # Re-resolve weak/missing abstracts from survey / raw_record / lat-lon
     # before the primary join (Howard Block/Surv_Sect + Martin LEVEL* + lease map).
+    if ARGS.spatial_only:
+        print("Spatial-only mode: skipping AbstractMatcher + abstract text join.")
     try:
+        if ARGS.spatial_only:
+            raise RuntimeError("spatial-only")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from abstract_match import AbstractMatcher
 
@@ -314,11 +392,12 @@ def main() -> None:
         print(f"AbstractMatcher unavailable ({exc}); using stored abstracts only.")
 
     owner_id_to_abstract: dict[str, str] = {}
-    for owner in all_owners:
-        owner_id = str(owner.get("id", ""))
-        owner_code = to_abstract_code(owner.get("abstract"))
-        if owner_id and owner_code in code_to_abstract_label:
-            owner_id_to_abstract[owner_id] = code_to_abstract_label[owner_code]
+    if not ARGS.spatial_only:
+        for owner in all_owners:
+            owner_id = str(owner.get("id", ""))
+            owner_code = to_abstract_code(owner.get("abstract"))
+            if owner_id and owner_code in code_to_abstract_label:
+                owner_id_to_abstract[owner_id] = code_to_abstract_label[owner_code]
 
     fallback_name_hits = 0
     print(
@@ -367,11 +446,18 @@ def main() -> None:
             from shapely.strtree import STRtree
 
             geoms = list(parcels_gdf.geometry.values)
+            # Bucket key for a spatially-matched owner. Abstract tracts keep
+            # their "A-<code>" label (unchanged); grid tracts (Winkler PSL
+            # block/section, empty ABSTRACT_N) fall back to their ABSTRACT_L
+            # so point-in-polygon owners still attach — without this they'd
+            # get a blank label and be dropped, leaving grid counties with
+            # zero owners on the map.
             labels = [
                 code_to_abstract_label.get(
                     to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"]),
                     "",
                 )
+                or norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
                 for idx in parcels_gdf.index
             ]
             tree = STRtree(geoms)

@@ -252,4 +252,43 @@ export const COUNTIES: Record<string, County> = {
       { operator: 'Other', pct: 41 },
     ],
   },
+  winkler: {
+    id: 'winkler',
+    name: 'Winkler',
+    state: 'TX',
+    displayName: 'Winkler County, TX',
+    // Winkler County centroid; Kermit (county seat) sits near 31.86°N,
+    // 103.09°W and the county spans roughly -103.33° to -102.80° lon and
+    // 31.65° to 32.09° lat (from the 2026 tract layer bounds).
+    mapCenter: [-103.05, 31.86],
+    mapZoom: 10,
+    fips: '48495',
+    fipsCode: '495',
+    ownershipTable: 'winkler_mineral_ownership',
+    wellsTable: 'winkler_wells',
+    geoJsonPath: '/winkler_parcels_enriched.geojson',
+    mapGeoJsonPath: '/winkler_parcels_map.geojson?v=2026roll-1',
+    // Mirrors the other Permian counties: CAD interest is a 0–1 decimal
+    // multiplied by 100 for display.
+    ownershipPctIsDecimal: true,
+    // Winkler tracts are a Public School Land (PSL) block/section grid, so the
+    // renderer keys labels off LEVEL2_BLO/LEVEL3_SUR ("PSL BLK 26 SEC 39")
+    // rather than a numeric abstract. ABSTRACT_L is still the per-tract join
+    // key.
+    abstractField: 'ABSTRACT_L',
+    nriCode: '',
+    // Top operators by owner-row count from the 2026 ownership roll.
+    operatorPatterns: [
+      'wpx', 'basin oil', 'permian resources', 'formentera', 'oxy',
+      'occidental', 'matador', 'apache', 'cog operating', 'stout energy',
+      'hilcorp', 'continental', 'mewbourne', 'blackbeard', 'ldf energy',
+    ],
+    wellsJoinStrategy: 'abstract',
+    breakdown: [
+      { operator: 'WPX / Devon Energy', pct: 22 },
+      { operator: 'Basin Oil & Gas', pct: 18 },
+      { operator: 'Permian Resources / Oxy', pct: 12 },
+      { operator: 'Other', pct: 48 },
+    ],
+  },
 }

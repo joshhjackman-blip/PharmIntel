@@ -114,7 +114,6 @@ const UPCOMING_PERMIAN_COUNTIES = [
   'Glasscock County, TX',
   'Crane County, TX',
   'Pecos County, TX',
-  'Winkler County, TX',
   'Reeves County, TX',
 ]
 
