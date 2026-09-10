@@ -88,7 +88,135 @@ def parse_args() -> argparse.Namespace:
             "owners into the few named-abstract tracts."
         ),
     )
+    parser.add_argument(
+        "--survey-tract-parser",
+        default=None,
+        help=(
+            "Optional module in scripts/ exposing parse(legal_desc) that "
+            "returns (tkey, abstract, block, twn, sec, surveyor) — e.g. "
+            "'build_winkler_tracts'. When set, owners still unattached after "
+            "the spatial pass are matched by parsing their own `survey` text "
+            "into the same ABSTRACT_L tract key (recovers rows with no or bad "
+            "coordinates)."
+        ),
+    )
+    parser.add_argument(
+        "--attach-via-wells",
+        dest="attach_via_wells",
+        action="store_true",
+        default=True,
+        help=(
+            "After spatial + survey-text, attach any still-unmapped owner to "
+            "the tract of a well on its lease: owner `api` list / rrc_lease_id "
+            "-> <county>_wells -> the well's tract (point-in-polygon). This is "
+            "the lease/well reference-point convention the roll itself uses. "
+            "Best-effort: skipped if the wells table or Supabase creds are "
+            "unavailable. On by default; disable with --no-attach-via-wells."
+        ),
+    )
+    parser.add_argument(
+        "--no-attach-via-wells",
+        dest="attach_via_wells",
+        action="store_false",
+    )
+    parser.add_argument(
+        "--wells-table",
+        default=None,
+        help="Wells table for --attach-via-wells (default: <county>_wells).",
+    )
     return parser.parse_args()
+
+
+def _norm_api(value: Any) -> str:
+    """RRC API-8 key: strip non-digits, keep the leading 8 (county+well)."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[:8]
+
+
+def _load_survey_parser(module_name: str):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import importlib
+
+    return importlib.import_module(module_name)
+
+
+def owner_survey_tract_key(owner: dict[str, Any], parser_mod: Any) -> str | None:
+    """Parse an owner's `survey` text into an ABSTRACT_L tract key using the
+    county's tract parser, so a coordinate-less owner can still be placed."""
+    survey = owner.get("survey")
+    if not survey:
+        rr = owner.get("raw_record")
+        if isinstance(rr, dict):
+            survey = rr.get("survey")
+    if not survey:
+        return None
+    parsed = parser_mod.parse(str(survey))
+    if not parsed:
+        return None
+    _tkey, absnum, block, twn, sec, _surv = parsed
+    if absnum:
+        return f"A-{absnum}"
+    if block and sec:
+        twn_sfx = f"-{twn}" if twn else ""
+        return f"B{block}{twn_sfx}-S{sec}"
+    return None
+
+
+def build_well_tract_maps(
+    client: Any, wells_table: str, parcels_gdf: Any
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Map each well to its tract (ABSTRACT_L, point-in-polygon on its surface
+    location) and index by API-8 and rrc_lease_id. Returns ({api8: label},
+    {lease: label}) with labels normalized like the spatial pass."""
+    from shapely.geometry import Point
+    from shapely.strtree import STRtree
+
+    geoms = list(parcels_gdf.geometry.values)
+    labels = [norm_text(parcels_gdf.at[idx, "ABSTRACT_L"]) for idx in parcels_gdf.index]
+    tree = STRtree(geoms)
+
+    def tract_of(lon: float, lat: float) -> str | None:
+        pt = Point(lon, lat)
+        for i in tree.query(pt):
+            if geoms[i].covers(pt) and labels[i]:
+                return labels[i]
+        return None
+
+    api2tract: dict[str, str] = {}
+    lease2tract: dict[str, str] = {}
+    offset = 0
+    page = 1000
+    while True:
+        result = (
+            client.table(wells_table)
+            .select("api_number, rrc_lease_id, latitude, longitude")
+            .range(offset, offset + page - 1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            break
+        for well in rows:
+            lat = well.get("latitude")
+            lon = well.get("longitude")
+            if lat is None or lon is None:
+                continue
+            try:
+                label = tract_of(float(lon), float(lat))
+            except (TypeError, ValueError):
+                label = None
+            if not label:
+                continue
+            api8 = _norm_api(well.get("api_number"))
+            if api8:
+                api2tract.setdefault(api8, label)
+            lease = str(well.get("rrc_lease_id") or "").strip()
+            if lease:
+                lease2tract.setdefault(lease, label)
+        if len(rows) < page:
+            break
+        offset += page
+    return api2tract, lease2tract
 
 
 def load_owners_from_csv(csv_path: str, county_display: str) -> list[dict[str, Any]]:
@@ -478,6 +606,87 @@ def main() -> None:
         f"(+{spatial_hits} via lat/lon; {len(unmapped_with_coords) - spatial_hits} "
         f"coord-carrying rows still outside every parcel)."
     )
+
+    tract_label_set = {
+        norm_text(parcels_gdf.at[idx, "ABSTRACT_L"]) for idx in parcels_gdf.index
+    }
+    tract_label_set.discard("")
+
+    # Fallback B: survey-text. Owners with no usable coordinates still carry
+    # the block/section in their `survey` string; parse it into the same
+    # ABSTRACT_L key and attach when it matches a real tract.
+    if ARGS.survey_tract_parser:
+        try:
+            parser_mod = _load_survey_parser(ARGS.survey_tract_parser)
+        except Exception as exc:  # noqa: BLE001
+            parser_mod = None
+            print(f"  survey-text parser '{ARGS.survey_tract_parser}' unavailable: {exc}")
+        if parser_mod is not None:
+            text_hits = 0
+            for owner in all_owners:
+                oid = str(owner.get("id", ""))
+                if not oid or oid in owner_id_to_abstract:
+                    continue
+                key = owner_survey_tract_key(owner, parser_mod)
+                if key and norm_text(key) in tract_label_set:
+                    owner_id_to_abstract[oid] = norm_text(key)
+                    text_hits += 1
+            print(f"After survey-text fallback: {len(owner_id_to_abstract)} owners "
+                  f"mapped (+{text_hits} via parsed survey block/section).")
+
+    # Fallback C: lease/well. Attach a still-unmapped owner to the tract of a
+    # well on its lease — owner `api` list / rrc_lease_id -> <county>_wells ->
+    # the well's tract. Same lease/well reference-point convention the roll
+    # uses for its own coordinates.
+    if ARGS.attach_via_wells:
+        wells_table = ARGS.wells_table or f"{COUNTY_ID}_wells"
+        well_client = None
+        try:
+            supa_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+            supa_key = (
+                os.getenv("SUPABASE_KEY")
+                or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+            )
+            if supa_url and supa_key:
+                well_client = create_client(supa_url, supa_key)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  attach-via-wells: no Supabase client ({exc}); skipping.")
+        if well_client is not None:
+            try:
+                api2tract, lease2tract = build_well_tract_maps(
+                    well_client, wells_table, parcels_gdf
+                )
+                print(f"  well->tract maps: {len(api2tract)} api, {len(lease2tract)} lease")
+                well_hits = 0
+                for owner in all_owners:
+                    oid = str(owner.get("id", ""))
+                    if not oid or oid in owner_id_to_abstract:
+                        continue
+                    label = None
+                    rr = owner.get("raw_record") if isinstance(owner.get("raw_record"), dict) else {}
+                    api_field = owner.get("api") or (rr.get("api") if rr else None)
+                    if api_field:
+                        for token in str(api_field).split(","):
+                            api8 = _norm_api(token)
+                            if api8 and api8 in api2tract:
+                                label = api2tract[api8]
+                                break
+                    if label is None:
+                        lease = str(
+                            owner.get("rrc_lease_id")
+                            or (rr.get("rrc_id") if rr else "")
+                            or ""
+                        ).strip()
+                        if lease and lease in lease2tract:
+                            label = lease2tract[lease]
+                    if label:
+                        owner_id_to_abstract[oid] = label
+                        well_hits += 1
+                print(f"After lease/well fallback: {len(owner_id_to_abstract)} owners "
+                      f"mapped (+{well_hits} via api/lease -> well tract).")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  attach-via-wells failed ({exc}); skipping.")
 
     # Final dictionary: abstract identifier -> list[owners]
     owners_by_abstract_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
