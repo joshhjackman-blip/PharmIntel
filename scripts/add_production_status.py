@@ -70,6 +70,7 @@ COUNTY_FIPS = {
     "gonzales": "177",
     "howard":   "227",
     "martin":   "317",
+    "winkler":  "495",
 }
 
 
