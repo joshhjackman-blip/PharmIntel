@@ -476,15 +476,20 @@ def main() -> None:
     # is set above for both Howard (from CODE) and Martin (derived from
     # ABSTRACT_L) shapefiles, so use it as the canonical join key.
     code_to_abstract_label: dict[str, str] = {}
-    for _, row in parcels_gdf.iterrows():
-        code = to_abstract_code(row.get("CODE")) or to_abstract_code(row.get("ABSTRACT_N"))
-        # Grid tracts (Winkler PSL) carry no numeric abstract. geopandas
-        # round-trips their empty ABSTRACT_N through the shapefile as the
-        # literal string "nan"/"none"; guard against it so every grid tract
-        # doesn't collapse into a single bogus "A-nan" bucket.
-        if not code or code.strip().lower() in {"nan", "none"}:
-            continue
-        code_to_abstract_label[code] = f"A-{code}"
+    for idx in parcels_gdf.index:
+        label_l = norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
+        code = to_abstract_code(parcels_gdf.at[idx, "CODE"]) if "CODE" in parcels_gdf.columns else ""
+        code = code or to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"])
+        # Numeric abstract ("441" -> bucket "A-441"). Grid tracts (Winkler PSL)
+        # carry no numeric abstract; geopandas round-trips their empty
+        # ABSTRACT_N as the literal "nan"/"none", so guard against it.
+        if code and code.strip().lower() not in {"nan", "none"}:
+            code_to_abstract_label.setdefault(code, f"A-{code}")
+        # Self-map the full ABSTRACT_L so an owner whose recovered `abstract`
+        # is already the tract key (recover_owner_tracts writes "A-441" for
+        # abstract tracts and "B10--S5" for grid tracts) text-matches directly.
+        if label_l and label_l.lower() not in {"nan", "none"}:
+            code_to_abstract_label.setdefault(label_l, label_l)
 
     # Re-resolve weak/missing abstracts from survey / raw_record / lat-lon
     # before the primary join (Howard Block/Surv_Sect + Martin LEVEL* + lease map).
@@ -574,28 +579,40 @@ def main() -> None:
             from shapely.strtree import STRtree
 
             geoms = list(parcels_gdf.geometry.values)
-            # Bucket key for a spatially-matched owner. Abstract tracts keep
-            # their "A-<code>" label (unchanged); grid tracts (Winkler PSL
-            # block/section, empty ABSTRACT_N) fall back to their ABSTRACT_L
-            # so point-in-polygon owners still attach — without this they'd
-            # get a blank label and be dropped, leaving grid counties with
-            # zero owners on the map.
-            labels = [
+            # Two label arrays. `code_labels` is the "A-<code>" bucket for real
+            # abstract tracts (empty for grid tracts); `grid_labels` is the raw
+            # ABSTRACT_L (e.g. Winkler "B26-S39"). Prefer an abstract tract when
+            # the point falls in one — counties like Ward/Midland have
+            # overlapping abstract + grid tracts, and the abstract tract is the
+            # meaningful bucket. Only fall back to a grid tract's ABSTRACT_L
+            # when NO abstract tract contains the point (Winkler PSL, or gaps).
+            code_labels = [
                 code_to_abstract_label.get(
-                    to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"]),
-                    "",
+                    to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"]), ""
                 )
-                or norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
+                for idx in parcels_gdf.index
+            ]
+            grid_labels = [
+                norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
                 for idx in parcels_gdf.index
             ]
             tree = STRtree(geoms)
             for owner_id, lon, lat in unmapped_with_coords:
                 point = Point(lon, lat)
+                assigned = None
+                grid_fallback = None
                 for i in tree.query(point):
-                    if geoms[i].contains(point) and labels[i]:
-                        owner_id_to_abstract[owner_id] = labels[i]
-                        spatial_hits += 1
+                    if not geoms[i].contains(point):
+                        continue
+                    if code_labels[i]:
+                        assigned = code_labels[i]
                         break
+                    if grid_fallback is None and grid_labels[i]:
+                        grid_fallback = grid_labels[i]
+                label = assigned or grid_fallback
+                if label:
+                    owner_id_to_abstract[owner_id] = label
+                    spatial_hits += 1
         except ImportError:
             print(
                 "  shapely not available; skipping spatial-fallback pass "
