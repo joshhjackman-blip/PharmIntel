@@ -61,7 +61,189 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("COUNTY_PUBLIC_DIR", "public"),
         help="Directory to copy the enriched GeoJSON into for the web app.",
     )
+    parser.add_argument(
+        "--owners-csv",
+        default=os.getenv("COUNTY_INPUT_OWNERS"),
+        help=(
+            "Optional path to the owners CSV/XLSX. When provided, owners are "
+            "parsed offline from this file (via load_county_mineral_records."
+            "build_payload) instead of read from Supabase. Lets a county be "
+            "enriched before its <county>_mineral_ownership table exists."
+        ),
+    )
+    parser.add_argument(
+        "--county-display",
+        default=None,
+        help="Display value for the 'county' column (offline mode). Defaults to capitalized county id.",
+    )
+    parser.add_argument(
+        "--spatial-only",
+        action="store_true",
+        help=(
+            "Skip abstract text-matching (AbstractMatcher + owner.abstract -> "
+            "parcel code) and attach every owner to its tract purely by a "
+            "lat/lon point-in-polygon join keyed on ABSTRACT_L. Use for "
+            "counties whose tracts are a block/section grid with no numeric "
+            "abstract (e.g. Winkler PSL), where the abstract path mis-buckets "
+            "owners into the few named-abstract tracts."
+        ),
+    )
+    parser.add_argument(
+        "--survey-tract-parser",
+        default=None,
+        help=(
+            "Optional module in scripts/ exposing parse(legal_desc) that "
+            "returns (tkey, abstract, block, twn, sec, surveyor) — e.g. "
+            "'build_winkler_tracts'. When set, owners still unattached after "
+            "the spatial pass are matched by parsing their own `survey` text "
+            "into the same ABSTRACT_L tract key (recovers rows with no or bad "
+            "coordinates)."
+        ),
+    )
+    parser.add_argument(
+        "--attach-via-wells",
+        dest="attach_via_wells",
+        action="store_true",
+        default=True,
+        help=(
+            "After spatial + survey-text, attach any still-unmapped owner to "
+            "the tract of a well on its lease: owner `api` list / rrc_lease_id "
+            "-> <county>_wells -> the well's tract (point-in-polygon). This is "
+            "the lease/well reference-point convention the roll itself uses. "
+            "Best-effort: skipped if the wells table or Supabase creds are "
+            "unavailable. On by default; disable with --no-attach-via-wells."
+        ),
+    )
+    parser.add_argument(
+        "--no-attach-via-wells",
+        dest="attach_via_wells",
+        action="store_false",
+    )
+    parser.add_argument(
+        "--wells-table",
+        default=None,
+        help="Wells table for --attach-via-wells (default: <county>_wells).",
+    )
     return parser.parse_args()
+
+
+def _norm_api(value: Any) -> str:
+    """RRC API-8 key: strip non-digits, keep the leading 8 (county+well)."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[:8]
+
+
+def _load_survey_parser(module_name: str):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import importlib
+
+    return importlib.import_module(module_name)
+
+
+def owner_survey_tract_key(owner: dict[str, Any], parser_mod: Any) -> str | None:
+    """Parse an owner's `survey` text into an ABSTRACT_L tract key using the
+    county's tract parser, so a coordinate-less owner can still be placed."""
+    survey = owner.get("survey")
+    if not survey:
+        rr = owner.get("raw_record")
+        if isinstance(rr, dict):
+            survey = rr.get("survey")
+    if not survey:
+        return None
+    parsed = parser_mod.parse(str(survey))
+    if not parsed:
+        return None
+    _tkey, absnum, block, twn, sec, _surv = parsed
+    if absnum:
+        return f"A-{absnum}"
+    if block and sec:
+        twn_sfx = f"-{twn}" if twn else ""
+        return f"B{block}{twn_sfx}-S{sec}"
+    return None
+
+
+def build_well_tract_maps(
+    client: Any, wells_table: str, parcels_gdf: Any
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Map each well to its tract (ABSTRACT_L, point-in-polygon on its surface
+    location) and index by API-8 and rrc_lease_id. Returns ({api8: label},
+    {lease: label}) with labels normalized like the spatial pass."""
+    from shapely.geometry import Point
+    from shapely.strtree import STRtree
+
+    geoms = list(parcels_gdf.geometry.values)
+    labels = [norm_text(parcels_gdf.at[idx, "ABSTRACT_L"]) for idx in parcels_gdf.index]
+    tree = STRtree(geoms)
+
+    def tract_of(lon: float, lat: float) -> str | None:
+        pt = Point(lon, lat)
+        for i in tree.query(pt):
+            if geoms[i].covers(pt) and labels[i]:
+                return labels[i]
+        return None
+
+    api2tract: dict[str, str] = {}
+    lease2tract: dict[str, str] = {}
+    offset = 0
+    page = 1000
+    while True:
+        result = (
+            client.table(wells_table)
+            .select("api_number, rrc_lease_id, latitude, longitude")
+            .range(offset, offset + page - 1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            break
+        for well in rows:
+            lat = well.get("latitude")
+            lon = well.get("longitude")
+            if lat is None or lon is None:
+                continue
+            try:
+                label = tract_of(float(lon), float(lat))
+            except (TypeError, ValueError):
+                label = None
+            if not label:
+                continue
+            api8 = _norm_api(well.get("api_number"))
+            if api8:
+                api2tract.setdefault(api8, label)
+            lease = str(well.get("rrc_lease_id") or "").strip()
+            if lease:
+                lease2tract.setdefault(lease, label)
+        if len(rows) < page:
+            break
+        offset += page
+    return api2tract, lease2tract
+
+
+def load_owners_from_csv(csv_path: str, county_display: str) -> list[dict[str, Any]]:
+    """Build the owner list from a raw CSV without touching Supabase.
+
+    Reuses the exact parsing in scripts/load_county_mineral_records.py so the
+    offline enrichment matches what the DB load would produce (abstract,
+    ownership_pct as a raw 0-1 decimal, raw_record with lat/long, etc.).
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import load_county_mineral_records as lcr
+
+    rows = lcr.read_input(Path(csv_path))
+    if not rows:
+        return []
+    column_lookup = {lcr.normalize_header(c): c for c in rows[0].keys()}
+    owners: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        payload = lcr.build_payload(
+            row, county_display=county_display, column_lookup=column_lookup
+        )
+        payload["id"] = index
+        state = (payload.get("mailing_state") or "").upper()
+        payload["out_of_state"] = bool(state) and state not in {"TX", "TEXAS"}
+        owners.append(payload)
+    print(f"Parsed {len(owners):,} owners offline from {csv_path}")
+    return owners
 
 
 ARGS = parse_args()
@@ -193,15 +375,20 @@ def paginate_motivated_owners(client: Client) -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    supabase_url = require_env("SUPABASE_URL", ("NEXT_PUBLIC_SUPABASE_URL",))
-    supabase_key = require_env(
-        "SUPABASE_KEY",
-        ("SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-    )
-    client = create_client(supabase_url, supabase_key)
-
-    # 1) Fetch all motivated owners with pagination
-    all_owners = paginate_motivated_owners(client)
+    # 1) Fetch all owners — offline from a CSV when --owners-csv is given
+    #    (used to enrich a county before its Supabase table exists), else
+    #    paginate the live <county>_mineral_ownership table.
+    if ARGS.owners_csv:
+        county_display = ARGS.county_display or COUNTY_ID.capitalize()
+        all_owners = load_owners_from_csv(ARGS.owners_csv, county_display)
+    else:
+        supabase_url = require_env("SUPABASE_URL", ("NEXT_PUBLIC_SUPABASE_URL",))
+        supabase_key = require_env(
+            "SUPABASE_KEY",
+            ("SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+        )
+        client = create_client(supabase_url, supabase_key)
+        all_owners = paginate_motivated_owners(client)
 
     # 2) Load parcels and normalize Howard-specific abstract fields
     input_parcels_path = resolve_input_parcels_path()
@@ -224,9 +411,20 @@ def main() -> None:
             lambda code: f"A-{code}" if code else ""
         )
     elif "ABSTRACT_L" in parcels_gdf.columns:
-        parcels_gdf["ABSTRACT_N"] = parcels_gdf["ABSTRACT_L"].apply(
-            lambda label: re.sub(r"^A-", "", str(label or ""), flags=re.IGNORECASE).strip()
-        )
+        # Only real "A-<abstract>" labels carry a numeric ABSTRACT_N. Grid
+        # tracts (Winkler PSL) use a "B<block>-S<section>" ABSTRACT_L with no
+        # abstract number — deriving ABSTRACT_N by blindly stripping "A-" would
+        # leave the whole grid key in ABSTRACT_N, which then gets re-prefixed
+        # to "A-B..-S.." and mismatches the ABSTRACT_L used for the owner
+        # lookup (every prior county's ABSTRACT_L starts with "A-", so their
+        # behavior is unchanged).
+        def _derive_abstract_n(label: Any) -> str:
+            text = str(label or "").strip()
+            if text.upper().startswith("A-"):
+                return re.sub(r"^A-", "", text, flags=re.IGNORECASE).strip()
+            return ""
+
+        parcels_gdf["ABSTRACT_N"] = parcels_gdf["ABSTRACT_L"].apply(_derive_abstract_n)
         parcels_gdf["ABSTRACT_L"] = parcels_gdf["ABSTRACT_L"].apply(
             lambda label: str(label or "").strip()
         )
@@ -278,15 +476,28 @@ def main() -> None:
     # is set above for both Howard (from CODE) and Martin (derived from
     # ABSTRACT_L) shapefiles, so use it as the canonical join key.
     code_to_abstract_label: dict[str, str] = {}
-    for _, row in parcels_gdf.iterrows():
-        code = to_abstract_code(row.get("CODE")) or to_abstract_code(row.get("ABSTRACT_N"))
-        if not code:
-            continue
-        code_to_abstract_label[code] = f"A-{code}"
+    for idx in parcels_gdf.index:
+        label_l = norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
+        code = to_abstract_code(parcels_gdf.at[idx, "CODE"]) if "CODE" in parcels_gdf.columns else ""
+        code = code or to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"])
+        # Numeric abstract ("441" -> bucket "A-441"). Grid tracts (Winkler PSL)
+        # carry no numeric abstract; geopandas round-trips their empty
+        # ABSTRACT_N as the literal "nan"/"none", so guard against it.
+        if code and code.strip().lower() not in {"nan", "none"}:
+            code_to_abstract_label.setdefault(code, f"A-{code}")
+        # Self-map the full ABSTRACT_L so an owner whose recovered `abstract`
+        # is already the tract key (recover_owner_tracts writes "A-441" for
+        # abstract tracts and "B10--S5" for grid tracts) text-matches directly.
+        if label_l and label_l.lower() not in {"nan", "none"}:
+            code_to_abstract_label.setdefault(label_l, label_l)
 
     # Re-resolve weak/missing abstracts from survey / raw_record / lat-lon
     # before the primary join (Howard Block/Surv_Sect + Martin LEVEL* + lease map).
+    if ARGS.spatial_only:
+        print("Spatial-only mode: skipping AbstractMatcher + abstract text join.")
     try:
+        if ARGS.spatial_only:
+            raise RuntimeError("spatial-only")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from abstract_match import AbstractMatcher
 
@@ -314,11 +525,12 @@ def main() -> None:
         print(f"AbstractMatcher unavailable ({exc}); using stored abstracts only.")
 
     owner_id_to_abstract: dict[str, str] = {}
-    for owner in all_owners:
-        owner_id = str(owner.get("id", ""))
-        owner_code = to_abstract_code(owner.get("abstract"))
-        if owner_id and owner_code in code_to_abstract_label:
-            owner_id_to_abstract[owner_id] = code_to_abstract_label[owner_code]
+    if not ARGS.spatial_only:
+        for owner in all_owners:
+            owner_id = str(owner.get("id", ""))
+            owner_code = to_abstract_code(owner.get("abstract"))
+            if owner_id and owner_code in code_to_abstract_label:
+                owner_id_to_abstract[owner_id] = code_to_abstract_label[owner_code]
 
     fallback_name_hits = 0
     print(
@@ -367,21 +579,40 @@ def main() -> None:
             from shapely.strtree import STRtree
 
             geoms = list(parcels_gdf.geometry.values)
-            labels = [
+            # Two label arrays. `code_labels` is the "A-<code>" bucket for real
+            # abstract tracts (empty for grid tracts); `grid_labels` is the raw
+            # ABSTRACT_L (e.g. Winkler "B26-S39"). Prefer an abstract tract when
+            # the point falls in one — counties like Ward/Midland have
+            # overlapping abstract + grid tracts, and the abstract tract is the
+            # meaningful bucket. Only fall back to a grid tract's ABSTRACT_L
+            # when NO abstract tract contains the point (Winkler PSL, or gaps).
+            code_labels = [
                 code_to_abstract_label.get(
-                    to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"]),
-                    "",
+                    to_abstract_code(parcels_gdf.at[idx, "ABSTRACT_N"]), ""
                 )
+                for idx in parcels_gdf.index
+            ]
+            grid_labels = [
+                norm_text(parcels_gdf.at[idx, "ABSTRACT_L"])
                 for idx in parcels_gdf.index
             ]
             tree = STRtree(geoms)
             for owner_id, lon, lat in unmapped_with_coords:
                 point = Point(lon, lat)
+                assigned = None
+                grid_fallback = None
                 for i in tree.query(point):
-                    if geoms[i].contains(point) and labels[i]:
-                        owner_id_to_abstract[owner_id] = labels[i]
-                        spatial_hits += 1
+                    if not geoms[i].contains(point):
+                        continue
+                    if code_labels[i]:
+                        assigned = code_labels[i]
                         break
+                    if grid_fallback is None and grid_labels[i]:
+                        grid_fallback = grid_labels[i]
+                label = assigned or grid_fallback
+                if label:
+                    owner_id_to_abstract[owner_id] = label
+                    spatial_hits += 1
         except ImportError:
             print(
                 "  shapely not available; skipping spatial-fallback pass "
@@ -392,6 +623,87 @@ def main() -> None:
         f"(+{spatial_hits} via lat/lon; {len(unmapped_with_coords) - spatial_hits} "
         f"coord-carrying rows still outside every parcel)."
     )
+
+    tract_label_set = {
+        norm_text(parcels_gdf.at[idx, "ABSTRACT_L"]) for idx in parcels_gdf.index
+    }
+    tract_label_set.discard("")
+
+    # Fallback B: survey-text. Owners with no usable coordinates still carry
+    # the block/section in their `survey` string; parse it into the same
+    # ABSTRACT_L key and attach when it matches a real tract.
+    if ARGS.survey_tract_parser:
+        try:
+            parser_mod = _load_survey_parser(ARGS.survey_tract_parser)
+        except Exception as exc:  # noqa: BLE001
+            parser_mod = None
+            print(f"  survey-text parser '{ARGS.survey_tract_parser}' unavailable: {exc}")
+        if parser_mod is not None:
+            text_hits = 0
+            for owner in all_owners:
+                oid = str(owner.get("id", ""))
+                if not oid or oid in owner_id_to_abstract:
+                    continue
+                key = owner_survey_tract_key(owner, parser_mod)
+                if key and norm_text(key) in tract_label_set:
+                    owner_id_to_abstract[oid] = norm_text(key)
+                    text_hits += 1
+            print(f"After survey-text fallback: {len(owner_id_to_abstract)} owners "
+                  f"mapped (+{text_hits} via parsed survey block/section).")
+
+    # Fallback C: lease/well. Attach a still-unmapped owner to the tract of a
+    # well on its lease — owner `api` list / rrc_lease_id -> <county>_wells ->
+    # the well's tract. Same lease/well reference-point convention the roll
+    # uses for its own coordinates.
+    if ARGS.attach_via_wells:
+        wells_table = ARGS.wells_table or f"{COUNTY_ID}_wells"
+        well_client = None
+        try:
+            supa_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+            supa_key = (
+                os.getenv("SUPABASE_KEY")
+                or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+            )
+            if supa_url and supa_key:
+                well_client = create_client(supa_url, supa_key)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  attach-via-wells: no Supabase client ({exc}); skipping.")
+        if well_client is not None:
+            try:
+                api2tract, lease2tract = build_well_tract_maps(
+                    well_client, wells_table, parcels_gdf
+                )
+                print(f"  well->tract maps: {len(api2tract)} api, {len(lease2tract)} lease")
+                well_hits = 0
+                for owner in all_owners:
+                    oid = str(owner.get("id", ""))
+                    if not oid or oid in owner_id_to_abstract:
+                        continue
+                    label = None
+                    rr = owner.get("raw_record") if isinstance(owner.get("raw_record"), dict) else {}
+                    api_field = owner.get("api") or (rr.get("api") if rr else None)
+                    if api_field:
+                        for token in str(api_field).split(","):
+                            api8 = _norm_api(token)
+                            if api8 and api8 in api2tract:
+                                label = api2tract[api8]
+                                break
+                    if label is None:
+                        lease = str(
+                            owner.get("rrc_lease_id")
+                            or (rr.get("rrc_id") if rr else "")
+                            or ""
+                        ).strip()
+                        if lease and lease in lease2tract:
+                            label = lease2tract[lease]
+                    if label:
+                        owner_id_to_abstract[oid] = label
+                        well_hits += 1
+                print(f"After lease/well fallback: {len(owner_id_to_abstract)} owners "
+                      f"mapped (+{well_hits} via api/lease -> well tract).")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  attach-via-wells failed ({exc}); skipping.")
 
     # Final dictionary: abstract identifier -> list[owners]
     owners_by_abstract_id: dict[str, list[dict[str, Any]]] = defaultdict(list)

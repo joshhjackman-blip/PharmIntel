@@ -43,7 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 COUNTY_FIPS = {
     "howard": "227", "martin": "317", "midland": "329", "loving": "301",
-    "reagan": "383", "upton": "461", "ward": "475",
+    "reagan": "383", "upton": "461", "ward": "475", "winkler": "495",
 }
 
 # RRC SYMNUM codes for a permitted / located-but-not-completed well.
